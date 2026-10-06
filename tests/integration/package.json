@@ -1,0 +1,11 @@
+{
+  "name": "swapee-integration-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test storage.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2"
+  }
+}
