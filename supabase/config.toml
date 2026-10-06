@@ -384,11 +384,16 @@ inspector_port = 8083
 deno_version = 2
 
 [edge_runtime.secrets]
-# 本機值放在 supabase/.env（不進 git）；正式環境用 `supabase secrets set CLEANUP_SECRET=...`。
+# Local values live in supabase/.env (not committed); in production use `supabase secrets set`.
 CLEANUP_SECRET = "env(CLEANUP_SECRET)"
+NOTIFY_SECRET = "env(NOTIFY_SECRET)"
 
-# 由排程以 CLEANUP_SECRET 呼叫，不走使用者 JWT。
+# Called on a schedule with CLEANUP_SECRET, not a user JWT.
 [functions.cleanup]
+verify_jwt = false
+
+# Called by the photos insert trigger with NOTIFY_SECRET.
+[functions.notify]
 verify_jwt = false
 
 [analytics]

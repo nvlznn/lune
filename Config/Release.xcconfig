@@ -1,0 +1,6 @@
+#include "Shared.xcconfig"
+
+// Production: your Supabase project URL and publishable key (safe to ship; access is enforced by RLS).
+SUPABASE_URL = https:/$()/YOUR-PROJECT-REF.supabase.co
+SUPABASE_KEY = YOUR-PUBLISHABLE-KEY
+APS_ENVIRONMENT = production

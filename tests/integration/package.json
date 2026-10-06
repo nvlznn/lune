@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test storage.test.mjs"
+    "test": "node --test storage.test.mjs push.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2"

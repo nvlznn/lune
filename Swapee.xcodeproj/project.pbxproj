@@ -1,0 +1,429 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		C6CBBAFF3EE3205AC5CCABE0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F4D72C08892919891A4484A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DE81BDA9EF021D62B47D8581;
+			remoteInfo = Swapee;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		160778C66DC7CC5E4136495F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		42D017BFB9E56982EBE79FA3 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		435B074F61A387867A9661E4 /* Swapee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Swapee.entitlements; sourceTree = "<group>"; };
+		8AD301D2836ED737253244BA /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		92E2648107745D19D390A19E /* Swapee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Swapee.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwapeeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B4091BC0B615F70EFF7124B4 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		2523DA44F5CD163D2DE67EFD /* Swapee */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Swapee;
+			sourceTree = "<group>";
+		};
+		7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SwapeeTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		273DE589FB995C542551780F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6C4EFF4A8555F297AEA24DB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		73B99886A91F7DBE15AC77E4 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				B4091BC0B615F70EFF7124B4 /* Shared.xcconfig */,
+				8AD301D2836ED737253244BA /* Debug.xcconfig */,
+				42D017BFB9E56982EBE79FA3 /* Release.xcconfig */,
+				160778C66DC7CC5E4136495F /* Info.plist */,
+				435B074F61A387867A9661E4 /* Swapee.entitlements */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		D64709053C71C5E65C54CAF6 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				92E2648107745D19D390A19E /* Swapee.app */,
+				A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F58198B0DB7F4E4A75CB959C = {
+			isa = PBXGroup;
+			children = (
+				2523DA44F5CD163D2DE67EFD /* Swapee */,
+				7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */,
+				73B99886A91F7DBE15AC77E4 /* Config */,
+				D64709053C71C5E65C54CAF6 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A0E371F97E3F05AA62C0610A /* SwapeeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "SwapeeTests" */;
+			buildPhases = (
+				ED7867CF767919CD224F8437 /* Sources */,
+				273DE589FB995C542551780F /* Frameworks */,
+				4EF12C8440446FC93F6B5659 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7CBB32C2DA1D8FAE6D8FF58A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */,
+			);
+			name = SwapeeTests;
+			productName = SwapeeTests;
+			productReference = A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		DE81BDA9EF021D62B47D8581 /* Swapee */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Swapee" */;
+			buildPhases = (
+				0717B5FCCBDA71C7C2AC26C0 /* Sources */,
+				E6C4EFF4A8555F297AEA24DB /* Frameworks */,
+				FE560B641CA55974D01A9834 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2523DA44F5CD163D2DE67EFD /* Swapee */,
+			);
+			name = Swapee;
+			productName = Swapee;
+			productReference = 92E2648107745D19D390A19E /* Swapee.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4F4D72C08892919891A4484A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A0E371F97E3F05AA62C0610A = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = DE81BDA9EF021D62B47D8581;
+					};
+					DE81BDA9EF021D62B47D8581 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Swapee" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = F58198B0DB7F4E4A75CB959C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D64709053C71C5E65C54CAF6 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DE81BDA9EF021D62B47D8581 /* Swapee */,
+				A0E371F97E3F05AA62C0610A /* SwapeeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4EF12C8440446FC93F6B5659 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE560B641CA55974D01A9834 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0717B5FCCBDA71C7C2AC26C0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ED7867CF767919CD224F8437 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7CBB32C2DA1D8FAE6D8FF58A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DE81BDA9EF021D62B47D8581 /* Swapee */;
+			targetProxy = C6CBBAFF3EE3205AC5CCABE0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3021780188FF96EF9DEC37A3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swapee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Swapee";
+			};
+			name = Release;
+		};
+		44CD0D1DA268FD7EC8D852DB /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 42D017BFB9E56982EBE79FA3 /* Release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/Swapee.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6KB6SVY565;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Swapee;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo to send to your group.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save photos you receive to your library.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		490E5EE96D16D102582154D9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A731B5340B8F74C2D58EC43A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CA93D5D7C4D36394E3BAC0AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swapee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Swapee";
+			};
+			name = Debug;
+		};
+		D5726608C1BD5A63974FCAA2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8AD301D2836ED737253244BA /* Debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Config/Swapee.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6KB6SVY565;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Swapee;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo to send to your group.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save photos you receive to your library.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Swapee" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				490E5EE96D16D102582154D9 /* Debug */,
+				A731B5340B8F74C2D58EC43A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "SwapeeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA93D5D7C4D36394E3BAC0AF /* Debug */,
+				3021780188FF96EF9DEC37A3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Swapee" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D5726608C1BD5A63974FCAA2 /* Debug */,
+				44CD0D1DA268FD7EC8D852DB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4F4D72C08892919891A4484A /* Project object */;
+}

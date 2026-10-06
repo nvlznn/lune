@@ -1,0 +1,14 @@
+#include "Shared.xcconfig"
+
+// Simulator: local `supabase start` on this Mac.
+SUPABASE_URL = http:/$()/127.0.0.1:54321
+// Device: your Mac's Bonjour name (System Settings → General → Sharing → Local hostname),
+// set in Config/Local.xcconfig, which isn't committed:
+//   DEV_SERVER_HOST = Your-Mac.local
+SUPABASE_URL[sdk=iphoneos*] = http:/$()/$(DEV_SERVER_HOST):54321
+SUPABASE_KEY = sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+APS_ENVIRONMENT = development
+// Reaching the Mac from a device needs the local network permission.
+INFOPLIST_KEY_NSLocalNetworkUsageDescription = Connects to the Swapee development server on your Mac.
+
+#include? "Local.xcconfig"

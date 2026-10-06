@@ -1,49 +1,61 @@
 # swapee
 swap photos with your friends
 
-## 後端（Supabase）
+One photo a day per group; every photo you send lets you receive one from a friend.
 
 ```
+Swapee.xcodeproj        iOS app (iOS 17+, SwiftUI, no third-party dependencies)
+Swapee/                 app sources (folders sync into the project automatically)
+SwapeeTests/            Swift Testing: image processing, decoding, end-to-end client test
+Config/                 xcconfigs (backend URL/key), Info.plist, entitlements
 supabase/
-├── migrations/
-│   ├── …_schema.sql    資料表、RLS、成員異動 trigger
-│   ├── …_storage.sql   私有 bucket、檔案 policy、7 天過期
-│   └── …_rpc.sql       客戶端呼叫的 RPC
-├── functions/cleanup/  用 Storage API 刪除排入佇列的檔案
-└── tests/              pgTAP：伺服器規則測試清單
-tests/integration/      透過真正的 API 測 Storage 與 cleanup
+├── migrations/         schema + RLS, storage, RPCs, push targeting
+├── functions/cleanup/  deletes queued Storage files
+├── functions/notify/   sends "a new photo is ready" through APNs
+└── tests/              pgTAP: the server rule checklist
+tests/integration/      Node tests against the real Supabase API (storage, cleanup, push wiring)
 ```
 
-所有寫入都走 RPC，客戶端沒有任何資料表的寫入權限。RPC 失敗時 `message` 是錯誤代碼（`already_uploaded_today`、`no_credits`…），完整清單在 `…_rpc.sql` 開頭。
+## Backend (Supabase)
 
-### 幾個和計畫書不同、或計畫書沒寫到的決定
+Every write goes through an RPC; clients have no write access to any table. A failed RPC returns an error code in `message` (`already_uploaded_today`, `no_credits`, …); the list is at the top of `…_rpc.sql`, and `APIError` in the app maps them to user-facing text.
 
-- **照片過期只刪檔、不刪列**：`photos.expired_at` 標記過期，資料列與 `deliveries` 保留，credits（上傳數 − 已收數）才不會因過期而變動。
-- **上傳者離開群組或刪除帳號時，收過他照片的人會退回一次資格**：照片與對應的 `deliveries` 一起刪除，所以那次收片不再算數。
-- **封鎖不退回資格**：已收到的照片只是隱藏。
-- **上傳分兩步**：先把檔案傳到 `photos/{group_id}/{user_id}/{uuid}.jpg`（UUID 小寫），再呼叫 `upload_photo` 登記。Storage policy 只允許今天在該群組還沒傳過的成員上傳，且沒登記的檔案最多 3 個；超過一天沒登記的檔案會被清掉。
-- **檔案刪除走佇列**：Storage 檔案不能用 SQL 直接刪除，所以會先寫進 `private.storage_deletions`，再由 `cleanup` Edge Function 刪除。排入佇列的當下，RLS 就已經讀不到這些檔案。
-- **邀請碼防猜**：同一個人一小時內猜錯 10 次就暫停。找不到邀請碼時，`join_group` 回傳空陣列，不丟錯。
-- `profiles.terms_accepted_at`：首次登入同意條款的時間，透過 `save_profile(p_display_name, p_accept_terms)` 寫入。
+### Decisions beyond the plan
 
-### 本機開發與測試
+- **Expired photos keep their row**: after 7 days `photos.expired_at` is set and the file is deleted, but the row and its `deliveries` stay so credits (sent − received) never shift.
+- **When an uploader leaves or deletes their account, everyone who received their photo gets that credit back**, because the photo and its deliveries are deleted.
+- **Blocking doesn't refund credits**; received photos are just hidden.
+- **Two-step upload**: the app uploads to `photos/{group_id}/{user_id}/{uuid}.jpg` (lowercase UUIDs), then calls `upload_photo`. Storage only accepts the file from a member who hasn't sent a photo to that group today, with at most 3 unregistered files; files never registered are cleaned up after a day.
+- **File deletion is queued**: Storage files can't be deleted with SQL, so paths go into `private.storage_deletions` and the `cleanup` function removes them. RLS hides them the moment they're queued.
+- **Invite code guessing**: 10 wrong codes per user per hour, then a pause. `join_group` returns an empty array for an unknown code.
+- **Push "waiting" is judged as of the photo's arrival**: the notify call runs asynchronously, so a member counts as waiting only if they had uploaded before the new photo, still have credits, have nothing else claimable, and haven't received it already. Max one notification per member per group per day.
 
-需要 Docker 與 Supabase CLI。
+### Local development
+
+Needs Docker and the Supabase CLI.
 
 ```sh
-echo 'CLEANUP_SECRET=local-cleanup-secret' > supabase/.env
+printf 'CLEANUP_SECRET=local-cleanup-secret\nNOTIFY_SECRET=local-notify-secret\n' > supabase/.env
 supabase start -x realtime,imgproxy,mailpit,studio,logflare,vector,supavisor,postgres-meta
-supabase test db                                        # pgTAP，86 項
-(cd tests/integration && npm install && npm test)       # Storage／cleanup，11 項
+supabase test db                                        # pgTAP
+(cd tests/integration && npm install && npm test)       # Storage, cleanup, push wiring
 ```
 
-### 部署到正式環境（尚未在雲端驗證過）
+### Deploying (not yet verified in the cloud)
 
-1. `supabase link`、`supabase db push`
-2. `supabase secrets set CLEANUP_SECRET=<隨機字串>`，`supabase functions deploy cleanup`
-3. 開啟 `pg_net`，在 SQL editor 設定每小時刪除檔案的排程（過期標記已由 migration 的 pg_cron 每小時執行）：
-
+1. `supabase link`, `supabase db push`
+2. Secrets and functions:
+   ```sh
+   supabase secrets set CLEANUP_SECRET=<random> NOTIFY_SECRET=<random> \
+     APNS_KEY_ID=<key id> APNS_TEAM_ID=<team id> APNS_BUNDLE_ID=dev.noky.swapee \
+     APNS_ENVIRONMENT=production APNS_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"
+   supabase functions deploy cleanup
+   supabase functions deploy notify
+   ```
+3. In the SQL editor, give the database the function URLs and secrets, and schedule file cleanup (photo expiry itself already runs hourly via pg_cron):
    ```sql
+   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/notify', 'notify_url');
+   select vault.create_secret('<NOTIFY_SECRET>', 'notify_secret');
    select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/cleanup', 'cleanup_url');
    select vault.create_secret('<CLEANUP_SECRET>', 'cleanup_secret');
    select cron.schedule('swapee-cleanup-files', '17 * * * *', $$
@@ -54,3 +66,15 @@ supabase test db                                        # pgTAP，86 項
      )
    $$);
    ```
+4. Auth → Providers → Apple: enable it and add `dev.noky.swapee` as a client ID (native Sign in with Apple only needs the bundle ID).
+
+## iOS app
+
+Open `Swapee.xcodeproj`. Debug builds talk to local Supabase at `127.0.0.1:54321` (simulator only) and show a **Developer Sign-In** button, since Sign in with Apple needs a signed build. Release builds read the URL and publishable key from `Config/Release.xcconfig`.
+
+Before running on a device: set your team under Signing & Capabilities. The entitlements already request Sign in with Apple and Push Notifications.
+
+```sh
+xcodebuild test -project Swapee.xcodeproj -scheme Swapee \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro'   # end-to-end test needs local Supabase running
+```
