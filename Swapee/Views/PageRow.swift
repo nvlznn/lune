@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// One received photo with its sender and capture time. The menu offers Share (to save it), Report, and Block.
-struct ReceivedPhotoRow: View {
-    let photo: ReceivedPhoto
-    /// Lets the group screen refresh after blocking.
+/// A friend's page: the photo, their words, who and when. The menu offers Share (to save it), Report, and Block.
+struct PageRow: View {
+    let entry: Entry
+    /// Lets the screen refresh after blocking.
     let onBlocked: () -> Void
 
     @Environment(APIClient.self) private var api
@@ -15,19 +15,19 @@ struct ReceivedPhotoRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            RemotePhoto(path: photo.storagePath) { image = $0 }
+            RemotePhoto(path: entry.storagePath) { image = $0 }
                 .frame(maxWidth: .infinity)
                 .clipShape(.rect(cornerRadius: 10))
-                .accessibilityLabel("Photo from \(photo.senderName)")
+                .accessibilityLabel("Photo from \(entry.name)")
 
-            if let caption = photo.caption {
-                Text(caption)
-            }
+            Text(entry.text)
 
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: 12) {
+                AvatarView(name: entry.name, path: entry.avatarPath, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("From \(photo.senderName)")
-                    Text(PhotoTime.caption(takenAt: photo.takenAt, uploadedAt: photo.uploadedAt))
+                    Text(entry.name)
+                        .font(.headline)
+                    Text(PhotoTime.caption(takenAt: entry.takenAt, uploadedAt: entry.createdAt))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -39,12 +39,12 @@ struct ReceivedPhotoRow: View {
         }
         .padding(.vertical, 6)
         .contextMenu { actions }
-        .sheet(isPresented: $showReport) { ReportSheet(photo: photo) }
-        .alert("Block \(photo.senderName)?", isPresented: $confirmBlock) {
+        .sheet(isPresented: $showReport) { ReportSheet(entry: entry) }
+        .alert("Block \(entry.name)?", isPresented: $confirmBlock) {
             Button("Block", role: .destructive) { Task { await block() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You won’t receive each other’s photos in any group, and photos you’ve already received will be hidden.")
+            Text("You’ll stop being friends and won’t see each other’s pages.")
         }
         .errorAlert("Something Went Wrong", error: $error)
     }
@@ -54,18 +54,18 @@ struct ReceivedPhotoRow: View {
         if let image {
             ShareLink(
                 item: Image(uiImage: image),
-                preview: SharePreview("From \(photo.senderName)", image: Image(uiImage: image))
+                preview: SharePreview("From \(entry.name)", image: Image(uiImage: image))
             ) {
                 Label("Share…", systemImage: "square.and.arrow.up")
             }
         }
         Button("Report", systemImage: "exclamationmark.bubble") { showReport = true }
-        Button("Block \(photo.senderName)", systemImage: "hand.raised", role: .destructive) { confirmBlock = true }
+        Button("Block \(entry.name)", systemImage: "hand.raised", role: .destructive) { confirmBlock = true }
     }
 
     private func block() async {
         do {
-            try await api.block(userID: photo.senderId)
+            try await api.block(userID: entry.userId)
             onBlocked()
         } catch {
             self.error = error

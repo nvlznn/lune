@@ -16,9 +16,12 @@ struct SignInView: View {
         VStack(spacing: 0) {
             Spacer()
             VStack(spacing: 8) {
-                Text("Swapee")
+                GhostView(mood: .awake)
+                    .frame(width: 120)
+                    .padding(.bottom, 16)
+                Text("Lune")
                     .font(.largeTitle.bold())
-                Text("Swap one photo a day with friends.")
+                Text("A diary with friends, open at night.")
                     .font(.title3)
                     .foregroundStyle(.secondary)
             }
@@ -87,34 +90,47 @@ struct SignInView: View {
 
 private typealias ASAppleIDCredential = ASAuthorizationAppleIDCredential
 
-/// First sign-in: set a display name and accept the terms.
+/// First sign-in: a photo, a name and a username, and accepting the terms.
 struct ProfileSetupView: View {
     @Environment(APIClient.self) private var api
     @State private var name = ""
+    @State private var username = ""
+    @State private var usernameOK = false
+    @State private var avatar: Data?
     @State private var isSaving = false
     @State private var error: Error?
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var canSave: Bool { !trimmedName.isEmpty && trimmedName.count <= 30 && usernameOK && !isSaving }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $name)
-                        .textContentType(.nickname)
-                        .submitLabel(.done)
-                        .onSubmit(save)
-                } footer: {
-                    Text("Friends will see this name next to your photos.")
+                    AvatarDraftPicker(name: trimmedName, jpeg: $avatar)
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
                 }
 
                 Section {
+                    TextField("Name", text: $name)
+                        .textContentType(.nickname)
+                } header: {
+                    Text("Name")
                 } footer: {
-                    Text(markdown: "By tapping Done, you agree to Swapee’s [Terms of Service](\(AppConfig.termsURL)) and [Privacy Policy](\(AppConfig.privacyURL)).")
+                    Text("Friends see this name on your pages.")
+                }
+
+                UsernameField(username: $username, isValid: $usernameOK)
+
+                Section {
+                } footer: {
+                    Text(markdown: "By tapping Done, you agree to Lune’s [Terms of Service](\(AppConfig.termsURL)) and [Privacy Policy](\(AppConfig.privacyURL)).")
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Your Name")
+            .navigationTitle("Welcome to Lune")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Sign Out") { Task { await api.signOut() } }
@@ -123,8 +139,8 @@ struct ProfileSetupView: View {
                     if isSaving {
                         ProgressView()
                     } else {
-                        Button("Done", action: save)
-                            .disabled(trimmedName.isEmpty || trimmedName.count > 30)
+                        Button("Done") { Task { await save() } }
+                            .disabled(!canSave)
                     }
                 }
             }
@@ -132,19 +148,82 @@ struct ProfileSetupView: View {
         }
         .onAppear {
             if name.isEmpty { name = api.profile?.displayName ?? api.suggestedDisplayName ?? "" }
+            if username.isEmpty { username = api.profile?.username ?? "" }
         }
     }
 
-    private func save() {
-        guard !trimmedName.isEmpty, trimmedName.count <= 30, !isSaving else { return }
+    private func save() async {
+        guard canSave else { return }
         isSaving = true
-        Task {
-            defer { isSaving = false }
-            do {
-                try await api.saveProfile(displayName: trimmedName, acceptTerms: true)
-            } catch {
-                self.error = error
+        defer { isSaving = false }
+        do {
+            try await api.saveProfile(displayName: trimmedName, acceptTerms: true)
+            if let avatar, api.profile?.avatarPath == nil { try await api.setAvatar(jpeg: avatar) }
+            try await api.setUsername(username)
+        } catch {
+            self.error = error
+        }
+    }
+}
+
+/// A username field with Instagram's rules, checking availability as you type.
+struct UsernameField: View {
+    @Binding var username: String
+    /// True once the username follows the rules and is available.
+    @Binding var isValid: Bool
+
+    @Environment(APIClient.self) private var api
+    @State private var status: Status = .idle
+
+    enum Status: Equatable {
+        case idle, checking, available, taken, invalid(String)
+    }
+
+    var body: some View {
+        Section {
+            HStack(spacing: 2) {
+                Text("@").foregroundStyle(.secondary)
+                TextField("username", text: $username)
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.asciiCapable)
             }
+        } header: {
+            Text("Username")
+        } footer: {
+            switch status {
+            case .idle: Text("Friends add you by your username. Letters, numbers, periods and underscores.")
+            case .checking: Text("Checking…")
+            case .available: Label("Available", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            case .taken: Label("That username is taken.", systemImage: "xmark.circle.fill").foregroundStyle(.red)
+            case .invalid(let message): Text(message)
+            }
+        }
+        .onChange(of: username, initial: true) { _, newValue in
+            let cleaned = Username.clean(newValue)
+            if cleaned != newValue { username = cleaned }
+        }
+        .task(id: username) { await check() }
+    }
+
+    private func check() async {
+        isValid = false
+        if let problem = Username.problem(username) {
+            status = username.isEmpty ? .idle : .invalid(problem)
+            return
+        }
+        status = .checking
+        // Wait for a pause in typing.
+        try? await Task.sleep(for: .milliseconds(400))
+        guard !Task.isCancelled else { return }
+        do {
+            let available = try await api.isUsernameAvailable(username)
+            guard !Task.isCancelled else { return }
+            status = available ? .available : .taken
+            isValid = available
+        } catch {
+            status = .idle
         }
     }
 }
@@ -154,7 +233,7 @@ struct ProfileSetupView: View {
 private struct DevelopmentSignInSheet: View {
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
-    @State private var email = "alice@swapee.test"
+    @State private var email = "alice@lune.test"
     @State private var error: Error?
 
     var body: some View {
@@ -180,7 +259,7 @@ private struct DevelopmentSignInSheet: View {
                     Button("Sign In") {
                         Task {
                             do {
-                                try await api.signInForDevelopment(email: email, password: "swapee-dev-password")
+                                try await api.signInForDevelopment(email: email, password: "lune-dev-password")
                                 dismiss()
                             } catch {
                                 self.error = error

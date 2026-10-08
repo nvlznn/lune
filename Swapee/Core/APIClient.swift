@@ -101,7 +101,7 @@ final class APIClient {
         guard let userID = session?.userID else { throw APIError.notSignedIn }
         let rows: [Profile] = try await get(
             "profiles",
-            query: ["select": "id,display_name,terms_accepted_at", "id": "eq.\(userID.lowercased)"]
+            query: ["select": "id,display_name,username,avatar_path,time_zone,terms_accepted_at", "id": "eq.\(userID.lowercased)"]
         )
         profile = rows.first
         profileLoaded = true
@@ -112,47 +112,49 @@ final class APIClient {
         profileLoaded = true
     }
 
-    // MARK: - Groups
-
-    func myGroups() async throws -> [GroupSummary] {
-        try await rpc("my_groups")
+    func setUsername(_ username: String) async throws {
+        profile = try await rpc("set_username", ["p_username": username])
     }
 
-    func createGroup(name: String) async throws -> GroupInfo {
-        try await rpc("create_group", ["p_name": name])
-    }
-
-    /// Returns nil when no group has this invite code.
-    func joinGroup(code: String) async throws -> GroupInfo? {
-        let groups: [GroupInfo] = try await rpc("join_group", ["p_code": code])
-        return groups.first
-    }
-
-    func leaveGroup(_ groupID: UUID) async throws {
-        try await rpc("leave_group", ["p_group_id": groupID.lowercased])
-    }
-
-    func members(of groupID: UUID) async throws -> [Member] {
-        try await get("group_members", query: [
-            "select": "user_id,joined_at,profile:profiles(display_name)",
-            "group_id": "eq.\(groupID.lowercased)",
-            "order": "joined_at",
-        ])
-    }
-
-    // MARK: - Photos
-
-    func groupState(_ groupID: UUID) async throws -> GroupState {
-        try await rpc("group_state", ["p_group_id": groupID.lowercased])
-    }
-
-    /// Uploads the file to Storage, then registers it as today's photo. Returns the storage path.
-    @discardableResult
-    func uploadPhoto(groupID: UUID, jpeg: Data, takenAt: String?, caption: String? = nil) async throws -> String {
+    /// Uploads a square JPEG and makes it your avatar (the old one is deleted).
+    func setAvatar(jpeg: Data) async throws {
         guard let userID = session?.userID else { throw APIError.notSignedIn }
-        let path = "\(groupID.lowercased)/\(userID.lowercased)/\(UUID().lowercased).jpg"
+        let path = "\(userID.lowercased)/\(UUID().lowercased).jpg"
+        var request = URLRequest(url: config.url.appending(path: "storage/v1/object/avatars/\(path)"))
+        request.httpMethod = "POST"
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.setValue("false", forHTTPHeaderField: "x-upsert")
+        request.httpBody = jpeg
+        try await sendDiscardingBody(authorized(request))
+        profile = try await rpc("set_avatar", ["p_path": path])
+    }
 
-        var request = URLRequest(url: config.url.appending(path: "storage/v1/object/photos/\(path)"))
+    func removeAvatar() async throws {
+        profile = try await rpc("remove_avatar")
+    }
+
+    func isUsernameAvailable(_ username: String) async throws -> Bool {
+        try await rpc("username_available", ["p_username": username])
+    }
+
+    /// Your days and night window follow this time zone.
+    func setTimeZone(_ identifier: String = TimeZone.current.identifier) async throws {
+        try await rpc("set_time_zone", ["p_time_zone": identifier])
+        profile?.timeZone = identifier
+    }
+
+    // MARK: - Pages
+
+    func tonight() async throws -> TonightState {
+        try await rpc("tonight")
+    }
+
+    /// Uploads the photo, then writes the page for `day` (today or yesterday).
+    func writeEntry(day: String, jpeg: Data, takenAt: String?, text: String) async throws -> Entry {
+        guard let userID = session?.userID else { throw APIError.notSignedIn }
+        let path = "\(userID.lowercased)/\(UUID().lowercased).jpg"
+
+        var request = URLRequest(url: config.url.appending(path: "storage/v1/object/entries/\(path)"))
         request.httpMethod = "POST"
         request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         request.setValue("false", forHTTPHeaderField: "x-upsert")
@@ -160,33 +162,34 @@ final class APIClient {
         do {
             try await sendDiscardingBody(authorized(request))
         } catch APIError.http(_, let message) where message.contains("row-level security") {
-            // Storage only accepts the file from a member who hasn't sent a photo here today.
+            // Storage only takes photos while your diary is open and you still have a day to write.
             throw APIError.server(code: "upload_rejected")
         }
 
-        var args: [String: Any] = ["p_group_id": groupID.lowercased, "p_storage_path": path]
+        var args: [String: Any] = ["p_day": day, "p_storage_path": path, "p_text": text]
         args["p_taken_at"] = takenAt ?? NSNull()
-        args["p_caption"] = caption ?? NSNull()
-        try await rpc("upload_photo", args)
-        return path
+        return try await rpc("write_entry", args)
     }
 
-    func claimPhoto(groupID: UUID) async throws -> ClaimResult {
-        try await rpc("claim_photo", ["p_group_id": groupID.lowercased])
+    func editEntryText(_ entryID: UUID, text: String) async throws -> Entry {
+        try await rpc("edit_entry_text", ["p_entry_id": entryID.lowercased, "p_text": text])
     }
 
-    /// Keeps claiming until credits run out or the pool is empty.
-    func claimAll(groupID: UUID) async throws {
-        do {
-            while case .delivered = try await claimPhoto(groupID: groupID) {}
-        } catch APIError.server(code: "no_credits") {
-            // Every credit has been used.
-        }
+    /// Your own pages, newest first, before `day` (`yyyy-MM-dd`).
+    func myEntries(before day: String? = nil, limit: Int = 60) async throws -> [Entry] {
+        var args: [String: Any] = ["p_limit": limit]
+        args["p_before"] = day ?? NSNull()
+        return try await rpc("my_entries", args)
+    }
+
+    /// Everything you wrote, oldest first.
+    func exportEntries() async throws -> [Entry] {
+        try await rpc("export_entries")
     }
 
     /// Short-lived signed URL (1 hour).
-    func signedURL(for path: String) async throws -> URL {
-        var request = URLRequest(url: config.url.appending(path: "storage/v1/object/sign/photos/\(path)"))
+    func signedURL(for path: String, in bucket: StorageBucket = .entries) async throws -> URL {
+        var request = URLRequest(url: config.url.appending(path: "storage/v1/object/sign/\(bucket.rawValue)/\(path)"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["expiresIn": 3600])
@@ -198,18 +201,46 @@ final class APIClient {
         return url
     }
 
-    func downloadImage(at path: String) async throws -> Data {
-        let (data, response) = try await urlSession.data(from: try await signedURL(for: path))
+    func downloadImage(at path: String, in bucket: StorageBucket = .entries) async throws -> Data {
+        let (data, response) = try await urlSession.data(from: try await signedURL(for: path, in: bucket))
         try Self.check(response, data: data)
         return data
     }
 
-    // MARK: - Report & block
+    // MARK: - Friends
 
-    func report(photoID: UUID, reason: String) async throws {
-        try await rpc("report_photo", ["p_photo_id": photoID.lowercased, "p_reason": reason])
+    /// Someone by their exact username; nil if there's no such person.
+    func findUser(username: String) async throws -> FoundUser? {
+        try await rpc("find_user", ["p_username": username])
     }
 
+    func addFriend(username: String) async throws -> AddFriendResult {
+        try await rpc("add_friend", ["p_username": username])
+    }
+
+    func respondToFriendRequest(from userID: UUID, accept: Bool) async throws {
+        try await rpc("respond_friend_request", ["p_from_id": userID.lowercased, "p_accept": accept])
+    }
+
+    func friendRequests() async throws -> [FriendRequest] {
+        try await rpc("friend_requests")
+    }
+
+    func friends() async throws -> [Friend] {
+        try await rpc("friends")
+    }
+
+    func removeFriend(_ userID: UUID) async throws {
+        try await rpc("remove_friend", ["p_user_id": userID.lowercased])
+    }
+
+    // MARK: - Report & block
+
+    func report(entryID: UUID, reason: String) async throws {
+        try await rpc("report_entry", ["p_entry_id": entryID.lowercased, "p_reason": reason])
+    }
+
+    /// Also ends the friendship.
     func block(userID: UUID) async throws {
         try await rpc("block_user", ["p_user_id": userID.lowercased])
     }
@@ -289,6 +320,12 @@ final class APIClient {
         guard !(200..<300).contains(http.statusCode) else { return }
         throw APIError(status: http.statusCode, body: data)
     }
+}
+
+enum StorageBucket: String, Sendable {
+    /// Page photos.
+    case entries
+    case avatars
 }
 
 // MARK: - Session
@@ -389,10 +426,10 @@ struct AppConfig {
         key: Bundle.main.object(forInfoDictionaryKey: "SupabaseKey") as! String
     )
 
-    static let termsURL = URL(string: "https://swapee.noky.dev/terms")!
-    static let privacyURL = URL(string: "https://swapee.noky.dev/privacy")!
+    static let termsURL = URL(string: "https://lune.noky.dev/terms")!
+    static let privacyURL = URL(string: "https://lune.noky.dev/privacy")!
     // TODO: Confirm the support email address.
-    static let supportURL = URL(string: "mailto:support@swapee.noky.dev")!
+    static let supportURL = URL(string: "mailto:support@lune.noky.dev")!
 }
 
 // MARK: - Errors
@@ -419,14 +456,18 @@ enum APIError: LocalizedError, Equatable {
         switch self {
         case .server(let code):
             switch code {
-            case "already_uploaded_today", "upload_rejected": "You've already sent a photo to this group today."
-            case "no_credits": "Send a photo first to receive one."
-            case "not_member": "You're no longer in this group."
-            case "too_many_groups": "You can be in up to 10 groups."
-            case "group_full": "This group already has 20 members."
+            case "closed": "Lune is closed. It opens at 8:00 PM."
+            case "already_written", "upload_rejected": "You've already written this page."
+            case "invalid_day": "You can only write tonight's or yesterday's page."
+            case "text_required": "Write a few words about your day."
+            case "text_too_long": "Pages can be up to 500 characters."
+            case "entry_not_found": "This page couldn't be found."
             case "too_many_attempts": "Too many attempts. Try again later."
-            case "photo_not_found": "This photo couldn't be found."
-            case "caption_too_long": "Captions can be up to 140 characters."
+            case "own_username": "That's your own username."
+            case "invalid_username": "Usernames can use letters, numbers, periods and underscores (up to 30)."
+            case "username_taken": "That username is taken."
+            case "too_many_friends": "Each person can have up to 1,000 friends."
+            case "request_not_found": "This request is no longer there."
             case "profile_required": "Set your name first."
             default: "Something went wrong. Try again later."
             }

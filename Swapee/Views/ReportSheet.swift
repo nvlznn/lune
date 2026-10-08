@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ReportSheet: View {
-    let photo: ReceivedPhoto
+    let entry: Entry
 
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
@@ -36,11 +36,11 @@ struct ReportSheet: View {
                     TextField("Details (Optional)", text: $details, axis: .vertical)
                         .lineLimit(3...6)
                 } footer: {
-                    Text("Swapee reviews every report. The other person won’t know who reported them.")
+                    Text("Lune reviews every report. The other person won’t know who reported them.")
                 }
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Report Photo")
+            .navigationTitle("Report Page")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -57,7 +57,7 @@ struct ReportSheet: View {
             .alert("Report Sent", isPresented: $sent) {
                 Button("OK") { dismiss() }
             } message: {
-                Text("Thank you. To stop receiving photos from \(photo.senderName), you can block them.")
+                Text("Thank you. To stop seeing \(entry.name)’s pages, you can block them.")
             }
             .errorAlert("Couldn’t Send Report", error: $error)
         }
@@ -69,7 +69,7 @@ struct ReportSheet: View {
             defer { isSending = false }
             do {
                 let text = details.trimmingCharacters(in: .whitespacesAndNewlines)
-                try await api.report(photoID: photo.photoId, reason: text.isEmpty ? reason.rawValue : "\(reason.rawValue): \(text)")
+                try await api.report(entryID: entry.entryId, reason: text.isEmpty ? reason.rawValue : "\(reason.rawValue): \(text)")
                 sent = true
             } catch {
                 self.error = error

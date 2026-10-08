@@ -1,12 +1,30 @@
--- 測試輔助函式。刻意不包在 transaction 裡，讓後面的測試檔都能用。
--- 測試檔依檔名順序執行，所以這個檔案要排在最前面。
+-- Test helpers. Not wrapped in a transaction, so every test file can use them.
+-- Files run in name order, so this one must sort first.
 
 create extension if not exists pgtap with schema extensions;
 create schema if not exists tests;
 grant usage on schema tests to authenticated, anon;
 
--- 建立一個有 profile 的使用者。
-create or replace function tests.create_user(p_name text)
+-- A time zone where the local hour is p_hour right now ("Etc/GMT-8" is UTC+8: the sign is inverted).
+create or replace function tests.tz_for_hour(p_hour integer)
+returns text
+language plpgsql
+stable
+as $$
+declare
+  utc_hour integer := extract(hour from now() at time zone 'UTC');
+  utc_offset integer := ((p_hour - utc_hour + 36) % 24) - 12;
+begin
+  return case
+    when utc_offset = 0 then 'Etc/GMT'
+    when utc_offset > 0 then 'Etc/GMT-' || utc_offset
+    else 'Etc/GMT+' || (-utc_offset)
+  end;
+end;
+$$;
+
+-- A user with a profile, living where it's 22:00 (diary open) or 12:00 (closed).
+create or replace function tests.create_user(p_name text, p_open boolean default true)
 returns uuid
 language plpgsql
 security definer
@@ -20,12 +38,20 @@ begin
     uid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
     p_name || '-' || uid::text || '@test.local', now(), now()
   );
-  insert into public.profiles (id, display_name, terms_accepted_at) values (uid, p_name, now());
+  insert into public.profiles (id, display_name, username, time_zone, terms_accepted_at)
+  values (uid, p_name, lower(p_name) || '_' || left(replace(uid::text, '-', ''), 8),
+          tests.tz_for_hour(case when p_open then 22 else 12 end), now());
   return uid;
 end;
 $$;
 
--- 切換成某個使用者（authenticated + JWT sub）。
+create or replace function tests.set_open(p_user_id uuid, p_open boolean)
+returns void
+language sql
+as $$
+  update public.profiles set time_zone = tests.tz_for_hour(case when p_open then 22 else 12 end) where id = p_user_id
+$$;
+
 create or replace function tests.login_as(p_user_id uuid)
 returns void
 language plpgsql
@@ -46,7 +72,7 @@ begin
 end;
 $$;
 
--- 用名字記住 id，讓 throws_ok 等字串裡的 SQL 也拿得到。
+-- Remember ids by name, so SQL inside throws_ok strings can use them.
 create or replace function tests.remember(p_key text, p_id uuid)
 returns uuid
 language sql
@@ -62,76 +88,58 @@ as $$
   select current_setting('tests.' || p_key)::uuid
 $$;
 
--- 以某人身分建立群組、加入群組。
-create or replace function tests.create_group(p_owner uuid, p_name text)
-returns uuid
-language plpgsql
-as $$
-declare
-  gid uuid;
-begin
-  perform tests.login_as(p_owner);
-  select id into gid from public.create_group(p_name);
-  perform tests.logout();
-  return gid;
-end;
-$$;
-
-create or replace function tests.join(p_user_id uuid, p_group_id uuid)
+create or replace function tests.befriend(a uuid, b uuid)
 returns void
-language plpgsql
+language sql
 as $$
-declare
-  code text;
-begin
-  select invite_code into code from public.groups where id = p_group_id;
-  perform tests.login_as(p_user_id);
-  perform public.join_group(code);
-  perform tests.logout();
-end;
+  insert into public.friendships (user_a, user_b) values (least(a, b), greatest(a, b)) on conflict do nothing
 $$;
 
--- 模擬檔案已經傳到 Storage（直接寫 storage.objects，不經過 policy）。
-create or replace function tests.put_object(p_user_id uuid, p_group_id uuid)
+-- A file already in Storage (written directly, bypassing policies).
+create or replace function tests.put_object(p_user_id uuid)
 returns text
 language plpgsql
 as $$
 declare
-  path text := p_group_id::text || '/' || p_user_id::text || '/' || gen_random_uuid()::text || '.jpg';
+  path text := p_user_id::text || '/' || gen_random_uuid()::text || '.jpg';
 begin
-  insert into storage.objects (bucket_id, name, owner) values ('photos', path, p_user_id);
+  insert into storage.objects (bucket_id, name, owner) values ('entries', path, p_user_id);
   return path;
 end;
 $$;
 
--- 以某人身分完成一次上傳（放檔案 + upload_photo）。
-create or replace function tests.upload(p_user_id uuid, p_group_id uuid, p_taken_at timestamp default null)
+-- Writes a page as the user through write_entry. p_days_ago: 0 = today, 1 = yesterday.
+create or replace function tests.write(p_user_id uuid, p_days_ago integer default 0, p_text text default 'A good day.')
 returns uuid
 language plpgsql
 as $$
 declare
-  path text := tests.put_object(p_user_id, p_group_id);
-  pid uuid;
+  path text := tests.put_object(p_user_id);
+  result jsonb;
 begin
   perform tests.login_as(p_user_id);
-  select id into pid from public.upload_photo(p_group_id, path, p_taken_at);
+  result := public.write_entry(private.user_today(p_user_id) - p_days_ago, path, p_text, null);
   perform tests.logout();
-  return pid;
+  return (result ->> 'entry_id')::uuid;
 end;
 $$;
 
--- 把照片往前推（同時改 day），模擬過去上傳的照片。
-create or replace function tests.backdate(p_photo_id uuid, p_age interval)
-returns void
-language sql
+-- A page from any day, straight into the table.
+create or replace function tests.page_on(p_user_id uuid, p_day date)
+returns uuid
+language plpgsql
 as $$
-  update public.photos
-  set created_at = now() - p_age, day = public.swapee_day(now() - p_age)
-  where id = p_photo_id
+declare
+  eid uuid;
+begin
+  insert into public.entries (user_id, day, storage_path, text)
+  values (p_user_id, p_day, tests.put_object(p_user_id), 'Older page.')
+  returning id into eid;
+  return eid;
+end;
 $$;
 
--- 以某人身分 claim，回傳 status 或收到的 photo_id。
-create or replace function tests.claim(p_user_id uuid, p_group_id uuid)
+create or replace function tests.tonight(p_user_id uuid)
 returns jsonb
 language plpgsql
 as $$
@@ -139,16 +147,25 @@ declare
   result jsonb;
 begin
   perform tests.login_as(p_user_id);
-  result := public.claim_photo(p_group_id);
+  result := public.tonight();
   perform tests.logout();
   return result;
 end;
+$$;
+
+-- Friends' page ids someone sees for a day (0 = today, 1 = yesterday).
+create or replace function tests.friend_pages(p_user_id uuid, p_days_ago integer default 0)
+returns uuid[]
+language sql
+as $$
+  select coalesce(array_agg((page ->> 'entry_id')::uuid), '{}')
+  from jsonb_array_elements(tests.tonight(p_user_id) -> 'days' -> p_days_ago -> 'friends') as page
 $$;
 
 grant execute on all functions in schema tests to authenticated, anon;
 
 begin;
 select plan(1);
-select has_function('tests', 'create_user', array['text']);
+select has_function('tests', 'create_user', array['text', 'boolean']);
 select * from finish();
 rollback;

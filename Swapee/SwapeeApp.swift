@@ -6,6 +6,7 @@ struct SwapeeApp: App {
     @State private var api = APIClient.shared
     @State private var router = AppRouter.shared
     @State private var photos = PhotoLoader(api: APIClient.shared)
+    @State private var plus = LunePlus.shared
 
     var body: some Scene {
         WindowGroup {
@@ -13,11 +14,14 @@ struct SwapeeApp: App {
                 .environment(api)
                 .environment(router)
                 .environment(photos)
+                .environment(plus)
+                // Lune is a night app: always dark.
+                .preferredColorScheme(.dark)
         }
     }
 }
 
-/// Sign in → set a name → group list.
+/// Sign in → set a name → Tonight / Diary / Friends.
 struct RootView: View {
     @Environment(APIClient.self) private var api
 
@@ -28,14 +32,11 @@ struct RootView: View {
             } else if !api.profileLoaded {
                 ProgressView()
                     .task(id: api.session?.userID) { await loadProfile() }
-            } else if api.profile?.termsAcceptedAt == nil {
+            } else if api.profile?.termsAcceptedAt == nil || api.profile?.username == nil {
                 ProfileSetupView()
             } else {
-                GroupListView()
+                MainTabView()
             }
-        }
-        .task(id: api.session?.userID) {
-            if api.session != nil { await PushRegistration.refreshIfAuthorized() }
         }
     }
 
@@ -51,15 +52,40 @@ struct RootView: View {
     }
 }
 
-/// Navigation path for the group list. Tapping a notification opens that group directly.
+struct MainTabView: View {
+    @Environment(APIClient.self) private var api
+    @Environment(AppRouter.self) private var router
+
+    var body: some View {
+        @Bindable var router = router
+        TabView(selection: $router.tab) {
+            TonightView()
+                .tabItem { Label("Tonight", systemImage: "moon.stars") }
+                .tag(AppRouter.Tab.tonight)
+            DiaryView()
+                .tabItem { Label("Diary", systemImage: "book.closed") }
+                .tag(AppRouter.Tab.diary)
+            FriendsView()
+                .tabItem { Label("Friends", systemImage: "person.2") }
+                .tag(AppRouter.Tab.friends)
+        }
+        .task {
+            // Your days and night window follow where you are.
+            try? await api.setTimeZone()
+            await PushRegistration.requestIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            Task { try? await api.setTimeZone() }
+        }
+    }
+}
+
 @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    var path: [UUID] = []
 
-    func open(groupID: UUID) {
-        path = [groupID]
-    }
+    enum Tab: Hashable { case tonight, diary, friends }
+    var tab: Tab = .tonight
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -82,18 +108,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        NotificationCenter.default.post(name: .swapeePhotoAvailable, object: nil)
+        NotificationCenter.default.post(name: .luneDidChange, object: nil)
         return [.banner, .list, .sound]
     }
 
+    // Friend requests open Friends; everything else opens Tonight.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let info = response.notification.request.content.userInfo
-        if let id = (info["group_id"] as? String).flatMap(UUID.init(uuidString:)) {
-            AppRouter.shared.open(groupID: id)
-        }
+        let kind = response.notification.request.content.userInfo["kind"] as? String
+        AppRouter.shared.tab = kind == "friends" ? .friends : .tonight
     }
 }
 
 extension Notification.Name {
-    static let swapeePhotoAvailable = Notification.Name("swapeePhotoAvailable")
+    /// Something changed (a push arrived, or you wrote or edited a page); screens refresh.
+    static let luneDidChange = Notification.Name("luneDidChange")
 }

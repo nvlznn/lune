@@ -26,45 +26,39 @@ struct PostgresDateTests {
 }
 
 struct ResponseDecodingTests {
-    @Test func decodesGroupState() throws {
+    @Test func decodesTonight() throws {
+        let page = { (name: String, day: String, seen: String) in """
+            {"entry_id": "\(UUID().uuidString)", "user_id": "1b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "\(name)",
+             "day": "\(day)", "storage_path": "u/p.jpg", "text": "Long day.\\nGood dinner.", "taken_at": "2026-10-06T21:14:00",
+             "created_at": "2026-10-07T13:12:45.123456+00:00", "edited_at": null, "seen_by": \(seen)}
+            """ }
         let json = """
         {
-          "credits": 1,
-          "uploaded_today": true,
-          "today_photo": {
-            "photo_id": "6f1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59",
-            "storage_path": "g/u/p.jpg",
-            "taken_at": null,
-            "caption": null,
-            "uploaded_at": "2026-10-07T03:12:45.123456+00:00",
-            "seen_by": [{"user_id": "1b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "seen_at": "2026-10-07T03:13:00+00:00"}]
-          },
-          "received": [{
-            "photo_id": "9a1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59",
-            "sender_id": "1b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59",
-            "sender_name": "Amy",
-            "storage_path": "g/a/p.jpg",
-            "taken_at": "2026-10-06T21:14:00",
-            "caption": "Lunch at the beach",
-            "uploaded_at": "2026-10-06T14:00:00.5+00:00",
-            "delivered_at": "2026-10-07T03:13:00+00:00"
-          }]
+          "open": true, "today": "2026-10-07", "opens_at": null, "closes_at": "2026-10-07T20:00:00+00:00",
+          "days": [
+            {"day": "2026-10-07",
+             "mine": \(page("Me", "2026-10-07", #"[{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "seen_at": "2026-10-07T13:20:00+00:00"}]"#)),
+             "friends": [\(page("Amy", "2026-10-07", "null"))],
+             "writers": ["Amy", "Ben"]},
+            {"day": "2026-10-06", "mine": null, "friends": [], "writers": ["Cara"]}
+          ]
         }
         """
-        let state = try JSONDecoder.supabase.decode(GroupState.self, from: Data(json.utf8))
-        #expect(state.uploadedToday)
-        #expect(state.credits == 1)
-        #expect(state.todayPhoto?.takenAt == nil)
-        #expect(state.received.first?.senderName == "Amy")
-        #expect(state.received.first?.takenAt != nil)
-        #expect(state.received.first?.caption == "Lunch at the beach")
-        #expect(state.todayPhoto?.seenBy.first?.name == "Amy")
-        #expect(state.todayPhoto?.seenSummary == "Seen by Amy")
+        let state = try JSONDecoder.supabase.decode(TonightState.self, from: Data(json.utf8))
+        #expect(state.open)
+        #expect(state.tonight?.mine?.seenSummary == "Seen by Amy")
+        #expect(state.tonight?.mine?.text == "Long day.\nGood dinner.")
+        #expect(state.tonight?.friends.first?.seenBy == nil)
+        #expect(state.tonight?.lockedWriters == ["Ben"])
+        #expect(state.lastNight?.lockedWriters == ["Cara"])
+        #expect(state.closesAt != nil)
     }
 
-    @Test func decodesClaimResults() throws {
-        let waiting = try JSONDecoder.supabase.decode(ClaimResult.self, from: Data(#"{"status":"waiting"}"#.utf8))
-        #expect(waiting == .waiting)
+    @Test func decodesFriendResults() throws {
+        let result = try JSONDecoder.supabase.decode(AddFriendResult.self, from: Data(#"{"status":"already_friends","name":"Amy"}"#.utf8))
+        #expect(result == AddFriendResult(status: .alreadyFriends, name: "Amy"))
+        let notFound = try JSONDecoder.supabase.decode(AddFriendResult.self, from: Data(#"{"status":"not_found"}"#.utf8))
+        #expect(notFound.status == .notFound && notFound.name == nil)
     }
 
     @Test func decodesAuthResponseAndStoredSession() throws {
@@ -81,14 +75,23 @@ struct ResponseDecodingTests {
     }
 
     @Test func mapsRPCErrorCodes() {
-        let body = Data(#"{"code":"P0001","details":null,"hint":null,"message":"already_uploaded_today"}"#.utf8)
+        let body = Data(#"{"code":"P0001","details":null,"hint":null,"message":"closed"}"#.utf8)
         let error = APIError(status: 400, body: body)
-        #expect(error == .server(code: "already_uploaded_today"))
-        #expect(error.errorDescription == "You've already sent a photo to this group today.")
+        #expect(error == .server(code: "closed"))
+        #expect(error.errorDescription == "Lune is closed. It opens at 8:00 PM.")
     }
 
     @Test func mapsStorageErrors() {
         let body = Data(#"{"statusCode":"403","error":"Unauthorized","message":"new row violates row-level security policy"}"#.utf8)
         #expect(APIError(status: 400, body: body) == .http(status: 400, message: "new row violates row-level security policy"))
+    }
+}
+
+struct LuneDayTests {
+    @Test func formatsDays() {
+        #expect(LuneDay.previous("2026-10-01") == "2026-09-30")
+        #expect(LuneDay.daysBetween("2026-09-07", "2026-10-07") == 30)
+        #expect(LuneDay.title("2026-10-07").contains("October"))
+        #expect(LuneDay.month("2026-10-07").contains("2026"))
     }
 }

@@ -3,85 +3,108 @@ import Foundation
 struct Profile: Codable, Equatable {
     let id: UUID
     var displayName: String
+    /// Instagram-style handle friends use to add you. Nil until chosen at first sign-in.
+    var username: String?
+    /// Path in the avatars bucket; nil shows initials.
+    var avatarPath: String?
+    var timeZone: String
     var termsAcceptedAt: Date?
 }
 
-/// One row of the group list (`my_groups` RPC).
-struct GroupSummary: Codable, Identifiable, Hashable {
-    let id: UUID
-    var name: String
-    var inviteCode: String
-    var ownerId: UUID
-    var memberCount: Int
-    var uploadedToday: Bool
-    var credits: Int
-    var lastReceivedAt: Date?
-}
-
-/// A group returned by `create_group` / `join_group`.
-struct GroupInfo: Codable, Identifiable, Hashable {
-    let id: UUID
-    var name: String
-    var inviteCode: String
-    var ownerId: UUID
-}
-
-struct Member: Codable, Identifiable, Hashable {
+/// One page: a photo and the day's text.
+struct Entry: Codable, Identifiable, Hashable {
+    let entryId: UUID
     let userId: UUID
-    let joinedAt: Date
-    let profile: MemberProfile
-
-    var id: UUID { userId }
-
-    struct MemberProfile: Codable, Hashable {
-        let displayName: String
-    }
-}
-
-/// The photo you sent to a group today.
-struct OwnPhoto: Codable, Hashable {
-    let photoId: UUID
+    let name: String
+    let avatarPath: String?
+    /// The writer's day, `yyyy-MM-dd` (days roll over at 04:00 local time).
+    let day: String
     let storagePath: String
+    var text: String
+    /// The photographer's local time (EXIF has no offset), shown in the viewer's time zone.
     let takenAt: Date?
-    let caption: String?
-    let uploadedAt: Date
-    /// Who has received it, earliest first.
-    let seenBy: [Viewer]
+    let createdAt: Date
+    var editedAt: Date?
+    /// Only for your own pages: who has seen it, earliest first.
+    var seenBy: [Viewer]?
+
+    var id: UUID { entryId }
 
     struct Viewer: Codable, Hashable, Identifiable {
         let userId: UUID
         let name: String
+        let avatarPath: String?
         let seenAt: Date
         var id: UUID { userId }
     }
 }
 
-/// A photo you received (one delivery).
-struct ReceivedPhoto: Codable, Identifiable, Hashable {
-    let photoId: UUID
-    let senderId: UUID
-    let senderName: String
-    let storagePath: String
-    /// The photographer's local time (EXIF has no offset), shown in the viewer's time zone.
-    let takenAt: Date?
-    let caption: String?
-    let uploadedAt: Date
-    let deliveredAt: Date
+/// Today and yesterday as you see them right now (`tonight` RPC).
+struct TonightState: Codable, Equatable {
+    var open: Bool
+    var today: String
+    /// When closed: when the diary opens tonight.
+    var opensAt: Date?
+    /// When open: when it closes (04:00).
+    var closesAt: Date?
+    /// Today first, then yesterday.
+    var days: [DayState]
 
-    var id: UUID { photoId }
-}
+    struct DayState: Codable, Equatable, Identifiable {
+        var day: String
+        var mine: Entry?
+        /// Friends' pages you can see (only while open, and only if you wrote this day).
+        var friends: [Entry]
+        /// Friends who wrote this day, earliest first, whether or not you can see their pages.
+        var writers: [String]
 
-enum ClaimResult: Decodable, Equatable {
-    case delivered(ReceivedPhoto)
-    case waiting
-
-    private enum CodingKeys: String, CodingKey { case status, photo }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        switch try container.decode(String.self, forKey: .status) {
-        case "delivered": self = .delivered(try container.decode(ReceivedPhoto.self, forKey: .photo))
-        default: self = .waiting
+        var id: String { day }
+        /// Names of friends whose pages are still hidden from you.
+        var lockedWriters: [String] {
+            let visible = Set(friends.map(\.name))
+            return writers.filter { !visible.contains($0) }
         }
     }
+
+    var tonight: DayState? { days.first }
+    var lastNight: DayState? { days.count > 1 ? days[1] : nil }
+}
+
+struct Friend: Codable, Identifiable, Hashable {
+    let userId: UUID
+    let name: String
+    let username: String?
+    let avatarPath: String?
+    let since: Date
+    var id: UUID { userId }
+}
+
+struct FriendRequest: Codable, Identifiable, Hashable {
+    let userId: UUID
+    let name: String
+    let username: String?
+    let avatarPath: String?
+    let createdAt: Date
+    var id: UUID { userId }
+}
+
+/// Someone found by their exact username.
+struct FoundUser: Codable, Equatable, Identifiable {
+    enum Relationship: String, Codable {
+        case `self`, friend, requested, incoming, none
+    }
+    let userId: UUID
+    let name: String
+    let username: String
+    let avatarPath: String?
+    var relationship: Relationship
+    var id: UUID { userId }
+}
+
+struct AddFriendResult: Codable, Equatable {
+    enum Status: String, Codable {
+        case requested, friends, alreadyFriends = "already_friends", notFound = "not_found"
+    }
+    let status: Status
+    let name: String?
 }

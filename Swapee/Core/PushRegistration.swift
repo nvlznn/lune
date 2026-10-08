@@ -1,24 +1,23 @@
 import UIKit
 import UserNotifications
 
-/// There's only one notification: "a new photo is ready". Permission is requested after the first successful upload.
+/// Lune notifies when the diary opens, when a friend writes, and for friend requests.
+/// Permission is asked on first launch (notifications are on by default).
 enum PushRegistration {
     private static let tokenKey = "pushDeviceToken"
 
-    /// Call after a successful upload; does nothing if the user has already been asked.
-    static func requestAfterFirstUpload() async {
+    /// Asks once, then registers whenever permission is granted (device tokens can change).
+    static func requestIfNeeded() async {
         let center = UNUserNotificationCenter.current()
-        guard await center.notificationSettings().authorizationStatus == .notDetermined else { return }
-        if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
+        switch await center.notificationSettings().authorizationStatus {
+        case .notDetermined:
+            if (try? await center.requestAuthorization(options: [.alert, .sound])) == true {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        case .authorized, .provisional, .ephemeral:
             UIApplication.shared.registerForRemoteNotifications()
-        }
-    }
-
-    /// Call on every sign-in or launch, since the device token can change.
-    static func refreshIfAuthorized() async {
-        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-        if status == .authorized {
-            UIApplication.shared.registerForRemoteNotifications()
+        default:
+            break
         }
     }
 

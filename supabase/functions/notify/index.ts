@@ -1,13 +1,15 @@
-// Sends "a new photo is ready" to members who were waiting when someone uploaded.
-// Called by the photos insert trigger (pg_net) with NOTIFY_SECRET. Who to notify is decided in SQL
-// (public.push_targets); this only talks to APNs and removes tokens APNs rejects.
+// Sends Lune's push notifications. The database decides who gets what; this only talks to APNs.
+// Called with NOTIFY_SECRET by:
+//   * the entries insert trigger      {"entry_id": "..."}               → "Alice wrote tonight's page."
+//   * the friend_requests trigger     {"request": {"from_id", "to_id"}} → "Alice wants to be friends."
+//   * pg_cron every 15 minutes        {"opening": true}                 → "Tonight's page is open — Alice and Bob already wrote."
 //
 // Secrets: NOTIFY_SECRET, APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY (contents of the .p8 file),
 // APNS_BUNDLE_ID (dev.noky.swapee), APNS_ENVIRONMENT ("sandbox" or "production").
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const ALERT = { title: "Swapee", body: "A new photo is ready for you." };
+type Message = { token: string; body: string; kind: "tonight" | "friends" };
 
 Deno.serve(async (req) => {
   const secret = Deno.env.get("NOTIFY_SECRET");
@@ -15,24 +17,27 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
-  const { photo_id: photoId } = await req.json().catch(() => ({}));
-  if (typeof photoId !== "string") return new Response("photo_id required", { status: 400 });
-
+  const payload = await req.json().catch(() => ({}));
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
     auth: { persistSession: false },
   });
-  const { data: targets, error } = await admin.rpc("push_targets", { p_photo_id: photoId });
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  if (!targets?.length) return Response.json({ sent: 0 });
-  // Local development has no APNs key; the targets are still marked as notified.
-  if (!Deno.env.get("APNS_PRIVATE_KEY")) return Response.json({ sent: 0, skipped: targets.length });
+
+  let messages: Message[];
+  try {
+    messages = await messagesFor(admin, payload);
+  } catch (error) {
+    return Response.json({ error: String(error) }, { status: 500 });
+  }
+  if (messages.length === 0) return Response.json({ sent: 0 });
+  // Local development has no APNs key.
+  if (!Deno.env.get("APNS_PRIVATE_KEY")) return Response.json({ sent: 0, skipped: messages.length });
 
   const jwt = await providerToken();
   const invalid: string[] = [];
   let sent = 0;
 
   await Promise.all(
-    targets.map(async ({ token, group_id }: { token: string; group_id: string }) => {
+    messages.map(async ({ token, body, kind }) => {
       const res = await fetch(`${apnsHost()}/3/device/${token}`, {
         method: "POST",
         headers: {
@@ -40,10 +45,8 @@ Deno.serve(async (req) => {
           "apns-topic": Deno.env.get("APNS_BUNDLE_ID")!,
           "apns-push-type": "alert",
           "apns-priority": "10",
-          // A newer notification for the same group replaces an unread one.
-          "apns-collapse-id": group_id,
         },
-        body: JSON.stringify({ aps: { alert: ALERT, sound: "default" }, group_id }),
+        body: JSON.stringify({ aps: { alert: { title: "Lune", body }, sound: "default" }, kind }),
       });
       if (res.ok) {
         sent++;
@@ -61,6 +64,51 @@ Deno.serve(async (req) => {
   if (invalid.length) await admin.rpc("remove_device_tokens", { p_tokens: invalid });
   return Response.json({ sent, removed: invalid.length });
 });
+
+// deno-lint-ignore no-explicit-any
+async function messagesFor(admin: any, payload: any): Promise<Message[]> {
+  if (typeof payload.entry_id === "string") {
+    const { data, error } = await admin.rpc("push_targets_entry", { p_entry_id: payload.entry_id });
+    if (error) throw error.message;
+    return (data ?? []).map((t: { token: string; writer_name: string; day_label: string }) => ({
+      token: t.token,
+      body: `${t.writer_name} wrote ${t.day_label === "tonight" ? "tonight’s" : "yesterday’s"} page.`,
+      kind: "tonight",
+    }));
+  }
+  if (payload.request) {
+    const { data, error } = await admin.rpc("push_targets_request", {
+      p_from_id: payload.request.from_id,
+      p_to_id: payload.request.to_id,
+    });
+    if (error) throw error.message;
+    return (data ?? []).map((t: { token: string; requester_name: string }) => ({
+      token: t.token,
+      body: `${t.requester_name} wants to be friends.`,
+      kind: "friends",
+    }));
+  }
+  if (payload.opening) {
+    const { data, error } = await admin.rpc("push_targets_opening");
+    if (error) throw error.message;
+    return (data ?? []).map((t: { token: string; writers: string[] }) => ({
+      token: t.token,
+      body: t.writers.length
+        ? `Tonight’s page is open — ${names(t.writers)} already wrote.`
+        : "Tonight’s page is open.",
+      kind: "tonight",
+    }));
+  }
+  return [];
+}
+
+/** "Alice", "Alice and Bob", "Alice, Bob and Carol", "Alice, Bob and 3 others". */
+function names(list: string[]): string {
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  if (list.length === 3) return `${list[0]}, ${list[1]} and ${list[2]}`;
+  return `${list[0]}, ${list[1]} and ${list.length - 2} others`;
+}
 
 function apnsHost() {
   return Deno.env.get("APNS_ENVIRONMENT") === "production"

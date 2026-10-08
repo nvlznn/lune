@@ -1,0 +1,57 @@
+{
+  "identifier" : "4C3B6E1A",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "8D1F2A40",
+      "localizations" : [],
+      "name" : "Lune+",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "0.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1B2C3D4",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "Read your whole diary.", "displayName" : "Lune+ Monthly", "locale" : "en_US" }
+          ],
+          "productID" : "dev.noky.swapee.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Lune+ Monthly",
+          "subscriptionGroupID" : "8D1F2A40",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "7.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "E5F6A7B8",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "Read your whole diary.", "displayName" : "Lune+ Yearly", "locale" : "en_US" }
+          ],
+          "productID" : "dev.noky.swapee.plus.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Lune+ Yearly",
+          "subscriptionGroupID" : "8D1F2A40",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 4, "minor" : 0 }
+}

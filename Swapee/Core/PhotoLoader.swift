@@ -14,34 +14,40 @@ final class PhotoLoader {
         cache.countLimit = 100
     }
 
-    func cachedImage(for path: String) -> UIImage? {
-        cache.object(forKey: path as NSString)
+    private func key(_ path: String, _ bucket: StorageBucket) -> NSString {
+        "\(bucket.rawValue)/\(path)" as NSString
     }
 
-    func image(for path: String) async -> UIImage? {
-        if let cached = cachedImage(for: path) { return cached }
-        if let task = inFlight[path] { return await task.value }
+    func cachedImage(for path: String, in bucket: StorageBucket = .entries) -> UIImage? {
+        cache.object(forKey: key(path, bucket))
+    }
+
+    func image(for path: String, in bucket: StorageBucket = .entries) async -> UIImage? {
+        if let cached = cachedImage(for: path, in: bucket) { return cached }
+        let key = key(path, bucket)
+        if let task = inFlight[key as String] { return await task.value }
 
         let task = Task<UIImage?, Never> {
-            guard let data = try? await api.downloadImage(at: path) else { return nil }
+            guard let data = try? await api.downloadImage(at: path, in: bucket) else { return nil }
             return await Task.detached { UIImage(data: data)?.preparingForDisplay() }.value
         }
-        inFlight[path] = task
+        inFlight[key as String] = task
         let image = await task.value
-        inFlight[path] = nil
-        if let image { cache.setObject(image, forKey: path as NSString) }
+        inFlight[key as String] = nil
+        if let image { cache.setObject(image, forKey: key) }
         return image
     }
 
     /// Your own just-sent photo doesn't need to be downloaded again.
-    func store(_ image: UIImage, for path: String) {
-        cache.setObject(image, forKey: path as NSString)
+    func store(_ image: UIImage, for path: String, in bucket: StorageBucket = .entries) {
+        cache.setObject(image, forKey: key(path, bucket))
     }
 }
 
 /// A photo loaded from Storage, with a system placeholder fill while loading.
 struct RemotePhoto: View {
     let path: String
+    var bucket: StorageBucket = .entries
     var contentMode: ContentMode = .fit
     /// Hands the loaded image to the parent, e.g. for sharing. The cache can evict it at any time.
     var onLoad: (UIImage) -> Void = { _ in }
@@ -63,8 +69,8 @@ struct RemotePhoto: View {
             }
         }
         .task(id: path) {
-            image = loader.cachedImage(for: path)
-            if image == nil { image = await loader.image(for: path) }
+            image = loader.cachedImage(for: path, in: bucket)
+            if image == nil { image = await loader.image(for: path, in: bucket) }
             if let image { onLoad(image) }
         }
     }

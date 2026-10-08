@@ -71,6 +71,14 @@ struct ImageProcessingTests {
         #expect(try ImageProcessing.process(photo).takenAt == nil)
     }
 
+    @Test func avatarsAreSquareAndClean() throws {
+        let avatar = try ImageProcessing.avatar(try SamplePhoto.make(width: 4032, height: 3024, type: .jpeg, orientation: .right))
+        let properties = try SamplePhoto.properties(of: avatar)
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 512)
+        #expect(properties[kCGImagePropertyPixelHeight] as? Int == 512)
+        #expect(!ImageProcessing.containsPersonalMetadata(avatar))
+    }
+
     @Test func rejectsDataThatIsNotAnImage() {
         #expect(throws: ImageProcessing.Failure.self) {
             try ImageProcessing.process(Data("not an image".utf8))

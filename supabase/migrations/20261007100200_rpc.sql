@@ -1,0 +1,747 @@
+-- RPCs the app calls. Errors are raised as `raise exception '<code>'`; the app maps the message to text:
+--   not_authenticated, profile_required, invalid_time_zone, closed, invalid_day, already_written,
+--   invalid_path, file_missing, text_required, text_too_long, entry_not_found,
+--   invalid_username, username_taken, too_many_attempts, own_username, too_many_friends,
+--   request_not_found, user_not_found
+
+-- ─── Helpers ───────────────────────────────────────────────
+
+create function private.current_user_with_profile()
+returns uuid
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'not_authenticated';
+  end if;
+  if not exists (select 1 from public.profiles where id = uid) then
+    raise exception 'profile_required';
+  end if;
+  return uid;
+end;
+$$;
+
+-- Keeps line breaks (at most one blank line in a row); tidies spaces around them and at the ends.
+create function private.normalize_text(p_text text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select nullif(
+    btrim(
+      regexp_replace(
+        regexp_replace(
+          regexp_replace(replace(coalesce(p_text, ''), E'\r\n', E'\n'), '[ \t]+', ' ', 'g'),
+          ' ?\n ?', E'\n', 'g'),
+        '\n{3,}', E'\n\n', 'g'),
+      E' \n\t'),
+    '')
+$$;
+
+-- "@Alice.Smith " → "alice.smith". Validity is checked separately.
+create function private.clean_username(p_username text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select lower(regexp_replace(btrim(coalesce(p_username, '')), '^@', ''))
+$$;
+
+-- Instagram's rules: 1–30 of a–z, 0–9, "." and "_"; no leading, trailing or doubled period.
+create function private.is_valid_username(p_username text)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select p_username ~ '^[a-z0-9._]{1,30}$' and p_username !~ '(^\.|\.$|\.\.)'
+$$;
+
+-- Names nobody can take.
+create function private.is_reserved_username(p_username text)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select p_username in ('lune', 'lune.app', 'admin', 'administrator', 'support', 'help', 'official',
+                        'staff', 'team', 'moderator', 'root', 'system', 'null', 'undefined', 'me', 'you')
+$$;
+
+-- Serializes friend-count checks per person.
+create function private.lock_friends_of(p_user_id uuid)
+returns void
+language sql
+volatile
+set search_path = ''
+as $$
+  select pg_advisory_xact_lock(hashtextextended('lune:friends-of:' || p_user_id::text, 0))
+$$;
+
+create function private.friend_count(p_user_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select count(*)::integer from public.friendships where p_user_id in (user_a, user_b)
+$$;
+
+create function private.make_friends(a uuid, b uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.lock_friends_of(least(a, b));
+  perform private.lock_friends_of(greatest(a, b));
+  if private.friend_count(a) >= 1000 or private.friend_count(b) >= 1000 then
+    raise exception 'too_many_friends';
+  end if;
+  insert into public.friendships (user_a, user_b) values (least(a, b), greatest(a, b))
+  on conflict do nothing;
+  delete from public.friend_requests
+  where (from_id = a and to_id = b) or (from_id = b and to_id = a);
+end;
+$$;
+
+-- A page as the app sees it. Seen by is included only for the writer.
+create function private.entry_json(p_entry_id uuid, p_viewer uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'entry_id', e.id,
+    'user_id', e.user_id,
+    'name', p.display_name,
+    'avatar_path', p.avatar_path,
+    'day', e.day,
+    'storage_path', e.storage_path,
+    'text', e.text,
+    'taken_at', e.taken_at,
+    'created_at', e.created_at,
+    'edited_at', e.edited_at,
+    'seen_by', case when e.user_id = p_viewer then coalesce((
+      select jsonb_agg(jsonb_build_object('user_id', v.viewer_id, 'name', vp.display_name, 'avatar_path', vp.avatar_path, 'seen_at', v.viewed_at)
+                       order by v.viewed_at)
+      from public.entry_views v
+      join public.profiles vp on vp.id = v.viewer_id
+      where v.entry_id = e.id and not private.is_blocked_between(p_viewer, v.viewer_id)
+    ), '[]'::jsonb) end
+  )
+  from public.entries e
+  join public.profiles p on p.id = e.user_id
+  where e.id = p_entry_id
+$$;
+
+-- ─── Profile ───────────────────────────────────────────────
+
+-- First sign-in: set a name and accept the terms. Also used to change the name later.
+create function public.save_profile(p_display_name text, p_accept_terms boolean default false)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  result public.profiles;
+begin
+  if uid is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  insert into public.profiles (id, display_name, terms_accepted_at)
+  values (uid, btrim(p_display_name), case when p_accept_terms then now() end)
+  on conflict (id) do update
+    set display_name = excluded.display_name,
+        terms_accepted_at = coalesce(public.profiles.terms_accepted_at, excluded.terms_accepted_at)
+  returning * into result;
+  return result;
+end;
+$$;
+
+-- Choose or change your username (the old one is freed).
+create function public.set_username(p_username text)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  name text := private.clean_username(p_username);
+  result public.profiles;
+begin
+  if not private.is_valid_username(name) then
+    raise exception 'invalid_username';
+  end if;
+  if private.is_reserved_username(name) then
+    raise exception 'username_taken';
+  end if;
+  begin
+    update public.profiles set username = name where id = uid returning * into result;
+  exception when unique_violation then
+    raise exception 'username_taken';
+  end;
+  return result;
+end;
+$$;
+
+-- Upload the photo to avatars/{your id}/{uuid}.jpg first, then call this. The old one is deleted.
+create function public.set_avatar(p_path text)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  result public.profiles;
+begin
+  if p_path !~ private.entry_path_pattern() or split_part(p_path, '/', 1) <> uid::text then
+    raise exception 'invalid_path';
+  end if;
+  if not exists (select 1 from storage.objects where bucket_id = 'avatars' and name = p_path) then
+    raise exception 'file_missing';
+  end if;
+  update public.profiles set avatar_path = p_path where id = uid returning * into result;
+  return result;
+end;
+$$;
+
+create function public.remove_avatar()
+returns public.profiles
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.profiles set avatar_path = null where id = private.current_user_with_profile() returning *
+$$;
+
+-- For checking while typing. Your own current username counts as available.
+create function public.username_available(p_username text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select private.is_valid_username(private.clean_username(p_username))
+     and not private.is_reserved_username(private.clean_username(p_username))
+     and not exists (
+       select 1 from public.profiles
+       where username = private.clean_username(p_username) and id <> auth.uid()
+     )
+$$;
+
+-- The app reports its time zone on launch and whenever it changes.
+create function public.set_time_zone(p_time_zone text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+begin
+  if not exists (select 1 from pg_catalog.pg_timezone_names where name = p_time_zone) then
+    raise exception 'invalid_time_zone';
+  end if;
+  update public.profiles set time_zone = p_time_zone where id = uid;
+end;
+$$;
+
+-- Apple requires in-app account deletion. Everything cascades; photos go to the deletion queue.
+create function public.delete_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'not_authenticated';
+  end if;
+  delete from auth.users where id = uid;
+end;
+$$;
+
+-- ─── Tonight ───────────────────────────────────────────────
+
+-- Today and yesterday as the caller sees them. While open: your pages, friends' pages for the
+-- days you wrote (recorded as seen), and who wrote. While closed: your pages, who wrote, and when it opens.
+create function public.tonight()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  tz text := private.time_zone_of(uid);
+  local_now timestamp := now() at time zone tz;
+  today date := private.user_today(uid);
+  open boolean := private.is_open(uid);
+  visible uuid[];
+begin
+  -- Friends' pages you can see right now.
+  select coalesce(array_agg(e.id), '{}')
+  into visible
+  from public.entries e
+  where open
+    and e.user_id <> uid
+    and e.day in (today, today - 1)
+    and private.are_friends(uid, e.user_id)
+    and not private.is_blocked_between(uid, e.user_id)
+    and exists (select 1 from public.entries mine where mine.user_id = uid and mine.day = e.day);
+
+  insert into public.entry_views (viewer_id, entry_id)
+  select uid, unnest(visible)
+  on conflict do nothing;
+
+  return jsonb_build_object(
+    'open', open,
+    'today', today,
+    -- Closed between 04:00 and 20:00, so it opens at 20:00 on the same local date.
+    'opens_at', case when open then null else (local_now::date + time '20:00') at time zone tz end,
+    'closes_at', case when open then ((today + 1) + time '04:00') at time zone tz end,
+    'days', (
+      select jsonb_agg(jsonb_build_object(
+        'day', d.day,
+        'mine', (
+          select private.entry_json(e.id, uid) from public.entries e where e.user_id = uid and e.day = d.day
+        ),
+        'friends', coalesce((
+          select jsonb_agg(private.entry_json(e.id, uid) order by e.created_at desc)
+          from public.entries e
+          where e.id = any (visible) and e.day = d.day
+        ), '[]'::jsonb),
+        'writers', coalesce((
+          select jsonb_agg(p.display_name order by e.created_at)
+          from public.entries e
+          join public.profiles p on p.id = e.user_id
+          where e.day = d.day
+            and e.user_id <> uid
+            and private.are_friends(uid, e.user_id)
+            and not private.is_blocked_between(uid, e.user_id)
+        ), '[]'::jsonb)
+      ) order by d.day desc)
+      from (values (today), (today - 1)) as d (day)
+    )
+  );
+end;
+$$;
+
+-- ─── Writing ───────────────────────────────────────────────
+
+-- Upload the photo to entries/{your id}/{uuid}.jpg first, then call this.
+-- Only while open, for today or (backfilling) yesterday, once per day.
+create function public.write_entry(
+  p_day date,
+  p_storage_path text,
+  p_text text,
+  p_taken_at timestamp default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  today date := private.user_today(uid);
+  body text := private.normalize_text(p_text);
+  new_id uuid;
+begin
+  if not private.is_open(uid) then
+    raise exception 'closed';
+  end if;
+  if p_day is null or p_day not in (today, today - 1) then
+    raise exception 'invalid_day';
+  end if;
+  if body is null then
+    raise exception 'text_required';
+  end if;
+  if char_length(body) > 500 then
+    raise exception 'text_too_long';
+  end if;
+  if p_storage_path !~ private.entry_path_pattern() or split_part(p_storage_path, '/', 1) <> uid::text then
+    raise exception 'invalid_path';
+  end if;
+  if exists (select 1 from public.entries where user_id = uid and day = p_day) then
+    raise exception 'already_written';
+  end if;
+  if not exists (select 1 from storage.objects where bucket_id = 'entries' and name = p_storage_path) then
+    raise exception 'file_missing';
+  end if;
+
+  begin
+    insert into public.entries (user_id, day, storage_path, text, taken_at)
+    values (
+      uid, p_day, p_storage_path, body,
+      -- A capture time more than a day in the future is treated as unknown.
+      case when p_taken_at <= (now() at time zone 'UTC') + interval '1 day' then p_taken_at end
+    )
+    returning id into new_id;
+  exception when unique_violation then
+    raise exception 'already_written';
+  end;
+
+  return private.entry_json(new_id, uid);
+end;
+$$;
+
+-- The text can be edited while the diary is open; the photo can't.
+create function public.edit_entry_text(p_entry_id uuid, p_text text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  body text := private.normalize_text(p_text);
+begin
+  if not private.is_open(uid) then
+    raise exception 'closed';
+  end if;
+  if body is null then
+    raise exception 'text_required';
+  end if;
+  if char_length(body) > 500 then
+    raise exception 'text_too_long';
+  end if;
+
+  update public.entries
+  set text = body, edited_at = now()
+  where id = p_entry_id and user_id = uid;
+  if not found then
+    raise exception 'entry_not_found';
+  end if;
+
+  return private.entry_json(p_entry_id, uid);
+end;
+$$;
+
+-- ─── Your diary ────────────────────────────────────────────
+
+-- Your own pages, newest first, before a given day. The 30-day limit for free users is in the app.
+create function public.my_entries(p_before date default null, p_limit integer default 60)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(private.entry_json(e.id, e.user_id) order by e.day desc), '[]'::jsonb)
+  from (
+    select id, user_id, day from public.entries
+    where user_id = private.current_user_with_profile()
+      and (p_before is null or day < p_before)
+    order by day desc
+    limit least(greatest(p_limit, 1), 200)
+  ) e
+$$;
+
+-- Everything you wrote, oldest first, for export (always free).
+create function public.export_entries()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(private.entry_json(e.id, e.user_id) order by e.day), '[]'::jsonb)
+  from public.entries e
+  where e.user_id = private.current_user_with_profile()
+$$;
+
+-- ─── Friends ───────────────────────────────────────────────
+
+-- Looks someone up by their exact username, to show who it is before sending a request.
+-- Returns null when there's no such person (or a block between you); misses are rate limited.
+-- relationship: "self", "friend", "requested" (you asked), "incoming" (they asked you) or "none".
+create function public.find_user(p_username text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  target public.profiles;
+begin
+  if (
+    select count(*) from private.username_lookup_failures
+    where user_id = uid and attempted_at > now() - interval '1 hour'
+  ) >= 30 then
+    raise exception 'too_many_attempts';
+  end if;
+
+  select * into target from public.profiles where username = private.clean_username(p_username);
+  if not found or private.is_blocked_between(uid, target.id) then
+    insert into private.username_lookup_failures (user_id) values (uid);
+    return null;
+  end if;
+
+  return jsonb_build_object(
+    'user_id', target.id,
+    'name', target.display_name,
+    'username', target.username,
+    'avatar_path', target.avatar_path,
+    'relationship', case
+      when target.id = uid then 'self'
+      when private.are_friends(uid, target.id) then 'friend'
+      when exists (select 1 from public.friend_requests where from_id = uid and to_id = target.id) then 'requested'
+      when exists (select 1 from public.friend_requests where from_id = target.id and to_id = uid) then 'incoming'
+      else 'none'
+    end
+  );
+end;
+$$;
+
+-- Sends someone a request by username, or makes you friends if they already asked you.
+-- Returns {"status": "requested" | "friends" | "already_friends" | "not_found", "name"?, "username"?}.
+-- Not found doesn't raise, so the failed attempt is kept for rate limiting.
+create function public.add_friend(p_username text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  target public.profiles;
+begin
+  if (
+    select count(*) from private.username_lookup_failures
+    where user_id = uid and attempted_at > now() - interval '1 hour'
+  ) >= 30 then
+    raise exception 'too_many_attempts';
+  end if;
+
+  select * into target from public.profiles where username = private.clean_username(p_username);
+  if not found or private.is_blocked_between(uid, target.id) then
+    insert into private.username_lookup_failures (user_id) values (uid);
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  if target.id = uid then
+    raise exception 'own_username';
+  end if;
+  if private.are_friends(uid, target.id) then
+    return jsonb_build_object('status', 'already_friends', 'name', target.display_name, 'username', target.username);
+  end if;
+
+  if exists (select 1 from public.friend_requests where from_id = target.id and to_id = uid) then
+    perform private.make_friends(uid, target.id);
+    return jsonb_build_object('status', 'friends', 'name', target.display_name, 'username', target.username);
+  end if;
+
+  perform private.lock_friends_of(uid);
+  if private.friend_count(uid) >= 1000 then
+    raise exception 'too_many_friends';
+  end if;
+  insert into public.friend_requests (from_id, to_id) values (uid, target.id)
+  on conflict do nothing;
+  return jsonb_build_object('status', 'requested', 'name', target.display_name, 'username', target.username);
+end;
+$$;
+
+create function public.respond_friend_request(p_from_id uuid, p_accept boolean)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+begin
+  if not exists (select 1 from public.friend_requests where from_id = p_from_id and to_id = uid) then
+    raise exception 'request_not_found';
+  end if;
+  if p_accept then
+    perform private.make_friends(uid, p_from_id);
+  else
+    delete from public.friend_requests where from_id = p_from_id and to_id = uid;
+  end if;
+end;
+$$;
+
+-- Requests waiting for you to answer, newest first.
+create function public.friend_requests()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object('user_id', r.from_id, 'name', p.display_name, 'username', p.username, 'avatar_path', p.avatar_path, 'created_at', r.created_at)
+                            order by r.created_at desc), '[]'::jsonb)
+  from public.friend_requests r
+  join public.profiles p on p.id = r.from_id
+  where r.to_id = private.current_user_with_profile()
+$$;
+
+create function public.friends()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object('user_id', p.id, 'name', p.display_name, 'username', p.username, 'avatar_path', p.avatar_path, 'since', f.created_at)
+                            order by lower(p.display_name)), '[]'::jsonb)
+  from public.friendships f
+  join public.profiles p on p.id = case when f.user_a = auth.uid() then f.user_b else f.user_a end
+  where private.current_user_with_profile() in (f.user_a, f.user_b)
+$$;
+
+create function public.remove_friend(p_user_id uuid)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from public.friendships
+  where user_a = least(private.current_user_with_profile(), p_user_id)
+    and user_b = greatest(private.current_user_with_profile(), p_user_id)
+$$;
+
+-- Blocking also ends the friendship and any requests between you.
+create function public.block_user(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+begin
+  if p_user_id = uid or not exists (select 1 from public.profiles where id = p_user_id) then
+    raise exception 'user_not_found';
+  end if;
+  insert into public.blocks (blocker_id, blocked_id) values (uid, p_user_id)
+  on conflict do nothing;
+  delete from public.friendships where user_a = least(uid, p_user_id) and user_b = greatest(uid, p_user_id);
+  delete from public.friend_requests
+  where (from_id = uid and to_id = p_user_id) or (from_id = p_user_id and to_id = uid);
+end;
+$$;
+
+-- You can report any page you can see.
+create function public.report_entry(p_entry_id uuid, p_reason text default '')
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  owner uuid;
+begin
+  select e.user_id into owner
+  from public.entries e
+  where e.id = p_entry_id and e.user_id <> uid and private.can_view_entry(e.id);
+
+  if owner is null then
+    raise exception 'entry_not_found';
+  end if;
+
+  insert into public.reports (reporter_id, entry_id, reported_user_id, reason)
+  values (uid, p_entry_id, owner, left(coalesce(p_reason, ''), 500));
+end;
+$$;
+
+-- ─── Push devices ──────────────────────────────────────────
+
+create function public.register_device(p_token text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+begin
+  insert into public.devices (token, user_id) values (p_token, uid)
+  on conflict (token) do update set user_id = excluded.user_id, created_at = now();
+end;
+$$;
+
+-- Called before signing out so this device stops getting the account's notifications.
+create function public.unregister_device(p_token text)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from public.devices where token = p_token and user_id = auth.uid()
+$$;
+
+-- ─── Permissions ───────────────────────────────────────────
+
+revoke execute on function
+  public.save_profile(text, boolean),
+  public.set_username(text),
+  public.set_avatar(text),
+  public.remove_avatar(),
+  public.username_available(text),
+  public.find_user(text),
+  public.set_time_zone(text),
+  public.delete_account(),
+  public.tonight(),
+  public.write_entry(date, text, text, timestamp),
+  public.edit_entry_text(uuid, text),
+  public.my_entries(date, integer),
+  public.export_entries(),
+  public.add_friend(text),
+  public.respond_friend_request(uuid, boolean),
+  public.friend_requests(),
+  public.friends(),
+  public.remove_friend(uuid),
+  public.block_user(uuid),
+  public.report_entry(uuid, text),
+  public.register_device(text),
+  public.unregister_device(text)
+from public, anon;
+
+grant execute on function
+  public.save_profile(text, boolean),
+  public.set_username(text),
+  public.set_avatar(text),
+  public.remove_avatar(),
+  public.username_available(text),
+  public.find_user(text),
+  public.set_time_zone(text),
+  public.delete_account(),
+  public.tonight(),
+  public.write_entry(date, text, text, timestamp),
+  public.edit_entry_text(uuid, text),
+  public.my_entries(date, integer),
+  public.export_entries(),
+  public.add_friend(text),
+  public.respond_friend_request(uuid, boolean),
+  public.friend_requests(),
+  public.friends(),
+  public.remove_friend(uuid),
+  public.block_user(uuid),
+  public.report_entry(uuid, text),
+  public.register_device(text),
+  public.unregister_device(text)
+to authenticated;

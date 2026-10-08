@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// A photo that's ready to upload.
-struct ProcessedPhoto: Sendable, Equatable {
+nonisolated struct ProcessedPhoto: Sendable, Equatable {
     /// JPEG with a long edge of at most 1600 px and no EXIF or GPS data.
     let jpeg: Data
     /// EXIF `DateTimeOriginal` as `yyyy-MM-ddTHH:mm:ss` (the photographer's local time, no offset); nil if unavailable.
@@ -62,6 +62,40 @@ nonisolated enum ImageProcessing {
             throw Failure.metadataNotRemoved
         }
         return ProcessedPhoto(jpeg: jpeg, takenAt: takenAt, pixelWidth: image.width, pixelHeight: image.height)
+    }
+
+    /// A profile photo: the centered square, 512 × 512, no metadata.
+    static func avatar(_ data: Data) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 1536,
+              ] as CFDictionary) else {
+            throw Failure.unreadable
+        }
+        let side = min(image.width, image.height)
+        let crop = CGRect(x: (image.width - side) / 2, y: (image.height - side) / 2, width: side, height: side)
+        guard let square = image.cropping(to: crop) else { throw Failure.unreadable }
+
+        let size = min(512, side)
+        guard let context = CGContext(
+            data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { throw Failure.encodingFailed }
+        context.interpolationQuality = .high
+        context.draw(square, in: CGRect(x: 0, y: 0, width: size, height: size))
+        guard let scaled = context.makeImage() else { throw Failure.encodingFailed }
+
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw Failure.encodingFailed
+        }
+        CGImageDestinationAddImage(destination, scaled, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw Failure.encodingFailed }
+        let jpeg = output as Data
+        guard !containsPersonalMetadata(jpeg) else { throw Failure.metadataNotRemoved }
+        return jpeg
     }
 
     /// EXIF `yyyy:MM:dd HH:mm:ss` → `yyyy-MM-ddTHH:mm:ss`. Malformed or implausible values count as unavailable; never guess.

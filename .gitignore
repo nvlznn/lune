@@ -7,3 +7,6 @@ supabase/functions/.env
 
 # Per-developer Xcode settings
 Config/Local.xcconfig
+
+# Xcode per-user state
+xcuserdata/

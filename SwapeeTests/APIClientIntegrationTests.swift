@@ -6,73 +6,83 @@ import UniformTypeIdentifiers
 /// Runs the real client against local Supabase (`supabase start`). Skipped when it isn't running.
 @Suite(.serialized, .timeLimit(.minutes(1)), .enabled("needs local Supabase") { await LocalSupabase.isRunning() })
 struct APIClientIntegrationTests {
-    @Test func swapsPhotosEndToEnd() async throws {
-        let alice = try await LocalSupabase.signedInClient(name: "Alice")
-        let bob = try await LocalSupabase.signedInClient(name: "Bob")
+    @Test func exchangesPagesEndToEnd() async throws {
+        let alice = try await LocalSupabase.signedInClient(name: "Alice", localHour: 22)
+        let bob = try await LocalSupabase.signedInClient(name: "Bob", localHour: 22)
 
-        // Create and join
-        let group = try await alice.createGroup(name: "Integration")
-        #expect(group.inviteCode.count == 6)
-        #expect(try await bob.joinGroup(code: "ZZZZZZ") == nil)
-        let joined = try #require(try await bob.joinGroup(code: group.inviteCode.lowercased()))
-        #expect(joined.id == group.id)
-        #expect(try await alice.members(of: group.id).map(\.profile.displayName) == ["Alice", "Bob"])
+        // Usernames, photos, and friends by username + accept
+        let aliceUsername = try #require(alice.profile?.username)
+        #expect(try await bob.isUsernameAvailable(aliceUsername) == false)
+        let avatar = try ImageProcessing.avatar(try SamplePhoto.make(width: 1200, height: 900, type: .jpeg))
+        try await alice.setAvatar(jpeg: avatar)
+        let avatarPath = try #require(alice.profile?.avatarPath)
 
-        // Nothing to claim before uploading
-        await #expect(throws: APIError.server(code: "no_credits")) { try await alice.claimPhoto(groupID: group.id) }
+        #expect(try await bob.findUser(username: "nobody_\(UUID().uuidString.prefix(6).lowercased())") == nil)
+        let found = try #require(try await bob.findUser(username: "@" + aliceUsername.uppercased()))
+        #expect(found.name == "Alice")
+        #expect(found.relationship == .none)
+        #expect(found.avatarPath == avatarPath)
+        #expect(try await bob.addFriend(username: aliceUsername).status == .requested)
+        let request = try #require(try await alice.friendRequests().first)
+        #expect(request.name == "Bob")
+        #expect(request.username == bob.profile?.username)
+        try await alice.respondToFriendRequest(from: request.userId, accept: true)
+        #expect(try await bob.friends().map(\.name) == ["Alice"])
 
-        // Alice uploads and waits
+        // Alice writes tonight; Bob sees only that she wrote
         let photo = try ImageProcessing.process(try SamplePhoto.make(width: 2000, height: 1500, type: .jpeg))
-        try await alice.uploadPhoto(groupID: group.id, jpeg: photo.jpeg, takenAt: photo.takenAt, caption: "Lunch")
-        await #expect(throws: APIError.server(code: "upload_rejected")) {
-            try await alice.uploadPhoto(groupID: group.id, jpeg: photo.jpeg, takenAt: nil)
+        var aliceTonight = try await alice.tonight()
+        #expect(aliceTonight.open)
+        let today = try #require(aliceTonight.tonight?.day)
+        let page = try await alice.writeEntry(day: today, jpeg: photo.jpeg, takenAt: photo.takenAt, text: "Lunch by the sea.\nSleepy now.")
+        #expect(page.text == "Lunch by the sea.\nSleepy now.")
+        await #expect(throws: APIError.server(code: "already_written")) {
+            try await alice.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Again")
         }
-        #expect(try await alice.claimPhoto(groupID: group.id) == .waiting)
-        var aliceState = try await alice.groupState(group.id)
-        #expect(aliceState.uploadedToday)
-        #expect(aliceState.isWaiting)
 
-        // Bob uploads, then each receives the other's photo
-        try await bob.uploadPhoto(groupID: group.id, jpeg: photo.jpeg, takenAt: nil)
-        try await bob.claimAll(groupID: group.id)
-        try await alice.claimAll(groupID: group.id)
+        var bobTonight = try await bob.tonight()
+        #expect(bobTonight.tonight?.friends.isEmpty == true)
+        #expect(bobTonight.tonight?.lockedWriters == ["Alice"])
 
-        aliceState = try await alice.groupState(group.id)
-        #expect(aliceState.credits == 0)
-        let received = try #require(aliceState.received.first)
-        #expect(received.senderName == "Bob")
-        #expect(received.takenAt == nil)
-
-        let bobReceived = try #require(try await bob.groupState(group.id).received.first)
-        #expect(bobReceived.senderName == "Alice")
-        #expect(bobReceived.caption == "Lunch")
-        #expect(received.caption == nil)
-
-        // Alice sees that Bob received her photo
-        let seenBy = try #require(try await alice.groupState(group.id).todayPhoto?.seenBy)
-        #expect(seenBy.map(\.name) == ["Bob"])
-        let takenAt = try #require(bobReceived.takenAt)
+        // Bob writes, then reads Alice's page
+        _ = try await bob.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Rainy.")
+        bobTonight = try await bob.tonight()
+        let fromAlice = try #require(bobTonight.tonight?.friends.first)
+        #expect(fromAlice.name == "Alice")
+        #expect(fromAlice.avatarPath == avatarPath)
+        #expect(try await bob.downloadImage(at: avatarPath, in: .avatars) == avatar)
+        let takenAt = try #require(fromAlice.takenAt)
         #expect(Calendar.current.dateComponents([.hour, .minute], from: takenAt) == DateComponents(hour: 21, minute: 14))
-
-        // The downloaded file is the stripped JPEG
-        let downloaded = try await bob.downloadImage(at: bobReceived.storagePath)
+        let downloaded = try await bob.downloadImage(at: fromAlice.storagePath)
         #expect(downloaded == photo.jpeg)
         #expect(!ImageProcessing.containsPersonalMetadata(downloaded))
 
-        // The group list reflects today
-        let summary = try #require(try await alice.myGroups().first { $0.id == group.id })
-        #expect(summary.uploadedToday)
-        #expect(summary.memberCount == 2)
-        #expect(summary.lastReceivedAt != nil)
+        // Alice sees Bob saw it, and can edit her text
+        aliceTonight = try await alice.tonight()
+        #expect(aliceTonight.tonight?.mine?.seenBy?.map(\.name) == ["Bob"])
+        let edited = try await alice.editEntryText(page.entryId, text: "Lunch by the sea.")
+        #expect(edited.editedAt != nil)
 
-        // Report and block
-        try await alice.report(photoID: received.photoId, reason: "Spam")
-        try await alice.block(userID: received.senderId)
-        #expect(try await alice.groupState(group.id).received.isEmpty)
+        // Backfilling yesterday
+        let yesterday = try #require(aliceTonight.lastNight?.day)
+        _ = try await alice.writeEntry(day: yesterday, jpeg: photo.jpeg, takenAt: nil, text: "Written late.")
+        #expect(try await alice.myEntries().map(\.day) == [today, yesterday])
+        #expect(try await alice.exportEntries().count == 2)
 
-        // Leave, then delete accounts
-        try await bob.leaveGroup(group.id)
-        await #expect(throws: APIError.server(code: "not_member")) { try await bob.groupState(group.id) }
+        // Closed during the day
+        try await alice.setTimeZone(LocalSupabase.zone(forLocalHour: 12))
+        aliceTonight = try await alice.tonight()
+        #expect(!aliceTonight.open)
+        #expect(aliceTonight.opensAt != nil)
+        #expect(aliceTonight.tonight?.friends.isEmpty == true)
+        await #expect(throws: APIError.server(code: "closed")) {
+            try await alice.editEntryText(page.entryId, text: "Daytime edit")
+        }
+
+        // Report, block, delete
+        try await bob.report(entryID: fromAlice.entryId, reason: "Spam")
+        try await bob.block(userID: fromAlice.userId)
+        #expect(try await bob.friends().isEmpty)
         try await alice.deleteAccount()
         #expect(alice.session == nil)
         try await bob.deleteAccount()
@@ -90,10 +100,20 @@ enum LocalSupabase {
         return response?.statusCode == 200
     }
 
-    static func signedInClient(name: String) async throws -> APIClient {
+    /// A time zone where it's `hour` o'clock right now ("Etc/GMT-8" is UTC+8: the sign is inverted).
+    static func zone(forLocalHour hour: Int) -> String {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = .gmt
+        let offset = ((hour - utc.component(.hour, from: .now) + 36) % 24) - 12
+        return offset == 0 ? "Etc/GMT" : offset > 0 ? "Etc/GMT-\(offset)" : "Etc/GMT+\(-offset)"
+    }
+
+    static func signedInClient(name: String, localHour: Int) async throws -> APIClient {
         let client = APIClient(config: config, store: InMemorySessionStore())
-        try await client.signInForDevelopment(email: "\(name.lowercased())-\(UUID().lowercased)@swapee.test", password: "test-password-123")
+        try await client.signInForDevelopment(email: "\(name.lowercased())-\(UUID().lowercased)@lune.test", password: "test-password-123")
         try await client.saveProfile(displayName: name, acceptTerms: true)
+        try await client.setUsername("\(name.lowercased())_\(UUID().uuidString.prefix(8).lowercased())")
+        try await client.setTimeZone(zone(forLocalHour: localHour))
         return client
     }
 }
