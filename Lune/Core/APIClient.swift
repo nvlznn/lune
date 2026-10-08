@@ -36,6 +36,13 @@ final class APIClient {
         setSession(session)
     }
 
+    /// Email and password, for the App Review account only (reached by holding the moon on the sign-in screen).
+    /// Never creates an account.
+    func signIn(email: String, password: String) async throws {
+        let session = try await sendAuth(authRequest("token?grant_type=password", body: ["email": email, "password": password]))
+        setSession(session)
+    }
+
     #if DEBUG
     /// Local development only: signs in with email and password, creating the account if needed.
     func signInForDevelopment(email: String, password: String) async throws {
@@ -469,8 +476,7 @@ struct AppConfig {
 
     static let termsURL = URL(string: "https://lune.noky.dev/terms")!
     static let privacyURL = URL(string: "https://lune.noky.dev/privacy")!
-    // TODO: Confirm the support email address.
-    static let supportURL = URL(string: "mailto:support@lune.noky.dev")!
+    static let supportURL = URL(string: "mailto:support@noky.dev")!
 }
 
 // MARK: - Errors
@@ -518,6 +524,8 @@ enum APIError: LocalizedError, Equatable {
             case "group_not_found": "This group couldn't be found."
             default: "Something went wrong. Try again later."
             }
+        case .http(_, let message) where message == "Invalid login credentials":
+            "The email or password is incorrect."
         case .http(let status, _) where status == 413:
             "This photo is too large."
         case .http, .decoding:

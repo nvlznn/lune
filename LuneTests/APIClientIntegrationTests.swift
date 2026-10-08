@@ -97,6 +97,26 @@ struct APIClientIntegrationTests {
         #expect(alice.session == nil)
         try await bob.deleteAccount()
     }
+
+    /// The hidden email sign-in used by the App Review account: signs in, never creates accounts.
+    @Test func signsInWithEmailOnly() async throws {
+        let email = "review-\(UUID().lowercased)@lune.test"
+        let creator = APIClient(config: LocalSupabase.config, store: InMemorySessionStore())
+        try await creator.signInForDevelopment(email: email, password: "review-password-123")
+
+        let client = APIClient(config: LocalSupabase.config, store: InMemorySessionStore())
+        let wrong = await #expect(throws: APIError.self) {
+            try await client.signIn(email: email, password: "wrong-password")
+        }
+        #expect(wrong?.errorDescription == "The email or password is incorrect.")
+        await #expect(throws: APIError.self) {
+            try await client.signIn(email: "nobody-\(UUID().lowercased)@lune.test", password: "review-password-123")
+        }
+        #expect(client.session == nil)
+
+        try await client.signIn(email: email, password: "review-password-123")
+        #expect(client.session?.userID == creator.session?.userID)
+    }
 }
 
 enum LocalSupabase {

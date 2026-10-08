@@ -8,6 +8,8 @@ struct SignInView: View {
     @State private var nonce = ""
     @State private var isSigningIn = false
     @State private var error: Error?
+    /// Email sign-in for the App Review account, shown by holding the moon for two seconds.
+    @State private var showReviewSignIn = false
     #if DEBUG
     @State private var showDevelopmentSignIn = false
     #endif
@@ -19,6 +21,7 @@ struct SignInView: View {
                 MoonView(mood: .awake)
                     .frame(width: 120)
                     .padding(.bottom, 16)
+                    .onLongPressGesture(minimumDuration: 2) { showReviewSignIn = true }
                 Text("Lune")
                     .font(.largeTitle.bold())
                 Text("A diary with friends, open at night.")
@@ -48,6 +51,7 @@ struct SignInView: View {
         }
         .padding()
         .errorAlert("Couldn’t Sign In", error: $error)
+        .sheet(isPresented: $showReviewSignIn) { EmailSignInSheet() }
         #if DEBUG
         .sheet(isPresented: $showDevelopmentSignIn) { DevelopmentSignInSheet() }
         #endif
@@ -224,6 +228,60 @@ struct UsernameField: View {
             isValid = available
         } catch {
             status = .idle
+        }
+    }
+}
+
+/// Email and password sign-in for the App Review account. Everyone else uses Sign in with Apple.
+private struct EmailSignInSheet: View {
+    @Environment(APIClient.self) private var api
+    @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isSigningIn = false
+    @State private var error: Error?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Email", text: $email)
+                        .textContentType(.username)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
+                }
+            }
+            .disabled(isSigningIn)
+            .navigationTitle("Sign In with Email")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSigningIn {
+                        ProgressView()
+                    } else {
+                        Button("Sign In") { Task { await signIn() } }
+                            .disabled(email.isEmpty || password.isEmpty)
+                    }
+                }
+            }
+            .errorAlert("Couldn’t Sign In", error: $error)
+        }
+    }
+
+    private func signIn() async {
+        isSigningIn = true
+        defer { isSigningIn = false }
+        do {
+            try await api.signIn(email: email.trimmingCharacters(in: .whitespaces), password: password)
+            dismiss()
+        } catch {
+            self.error = error
         }
     }
 }

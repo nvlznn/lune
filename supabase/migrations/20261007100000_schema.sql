@@ -129,6 +129,13 @@ create table private.username_lookup_failures (
 );
 create index username_lookup_failures_user_idx on private.username_lookup_failures (user_id, attempted_at);
 
+-- The App Review account and its cast of friends (see the review migration). The reviewer can
+-- write at any hour, and its friends' letters move to its current day.
+create table private.review_accounts (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  role text not null check (role in ('reviewer', 'friend'))
+);
+
 -- Who already got tonight's "the diary is open" push.
 create table private.window_pushes (
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -239,6 +246,17 @@ as $$
   select private.day_at(private.time_zone_of(p_user_id), now())
 $$;
 
+create function private.is_reviewer(p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from private.review_accounts where user_id = p_user_id and role = 'reviewer')
+$$;
+
+-- App Review may test at any hour, so the review account is always open.
 create function private.is_open(p_user_id uuid)
 returns boolean
 language sql
@@ -246,7 +264,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select private.is_open_at(private.time_zone_of(p_user_id), now())
+  select private.is_reviewer(p_user_id) or private.is_open_at(private.time_zone_of(p_user_id), now())
 $$;
 
 -- Writing is accepted for 10 minutes after 04:00, so a page started before closing can still be sent.
@@ -266,7 +284,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select private.can_write_at(private.time_zone_of(p_user_id), now())
+  select private.is_reviewer(p_user_id) or private.can_write_at(private.time_zone_of(p_user_id), now())
 $$;
 
 -- ─── Relationships ─────────────────────────────────────────
@@ -350,6 +368,7 @@ grant execute on function
   private.is_open_at(text, timestamptz),
   private.time_zone_of(uuid),
   private.user_today(uuid),
+  private.is_reviewer(uuid),
   private.is_open(uuid),
   private.can_write_at(text, timestamptz),
   private.can_write(uuid),

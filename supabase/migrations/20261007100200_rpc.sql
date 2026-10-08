@@ -379,7 +379,8 @@ begin
     'open', open,
     -- Writing closes at 04:00 and reopens at 20:00 on the same local date.
     'opens_at', case when open then null else (local_now::date + time '20:00') at time zone tz end,
-    'closes_at', case when open then ((today + 1) + time '04:00') at time zone tz end,
+    -- The review account never closes.
+    'closes_at', case when open and not private.is_reviewer(uid) then ((today + 1) + time '04:00') at time zone tz end,
     -- When today's letters disappear and a new day starts.
     'ends_at', ((today + 1) + time '20:00') at time zone tz,
     'mine', (select private.entry_json(e.id, uid) from public.entries e where e.user_id = uid and e.day = today),

@@ -1,0 +1,11 @@
+{
+  "name": "lune-review-account",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node index.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2"
+  }
+}

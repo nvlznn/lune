@@ -15,6 +15,8 @@ supabase/
 ├── functions/notify/   sends pushes through APNs
 └── tests/              pgTAP
 tests/integration/      Node tests against the real Supabase API (storage, cleanup, push wiring)
+scripts/review-account/ sets up the App Review account (see below)
+docs/                   App Store launch checklist; drafts of the terms and privacy policy
 ```
 
 ## How it works
@@ -33,6 +35,8 @@ tests/integration/      Node tests against the real Supabase API (storage, clean
 - **Pushes**: one when your diary opens ("Tonight's page is open — Alice and Bob wrote to you", sent 20:00–22:00 local, once per night), one when a friend sends you a page for your current day, and friend requests. Nothing nudges anyone to write.
 - **Two-step upload**: the app uploads to `entries/{user_id}/{uuid}.jpg` (lowercase UUIDs), then calls `write_entry` (or `update_entry` to swap an unsent page's photo; the old file is deleted). Storage only accepts files while you can still write tonight's page or have an unsent page, with at most 3 unused files a day; unused files are cleaned up after a day.
 - **File deletion is queued**: Storage files can't be deleted with SQL, so paths go into `private.storage_deletions` and the `cleanup` function removes them.
+
+- **App Review account**: Apple's reviewers can't sign in with someone's Apple ID and may test at noon, so one email/password account (`private.review_accounts`) is always open and has three friends whose letters move to its current day every 10 minutes. Holding the moon on the sign-in screen for two seconds shows the email sign-in (it never creates accounts). Set it up with `scripts/review-account` (instructions at the top of `index.mjs`).
 
 Every write goes through an RPC; clients have no write access to any table. A failed RPC returns an error code in `message` (`closed`, `already_written`, …); the list is at the top of `…_rpc.sql`, and `APIError` in the app maps them to user-facing text.
 
