@@ -68,13 +68,18 @@ export function uploadFile(user, path, body = JPEG, contentType = "image/jpeg") 
   return user.client.storage.from("entries").upload(path, body, { contentType, upsert: false });
 }
 
-/** Uploads a photo and writes the page for today (or yesterday). Returns the page. */
-export async function writePage(user, { daysAgo = 0, text = "A good day." } = {}) {
-  const state = await rpc(user, "tonight");
-  const day = state.days[daysAgo].day;
+/** Uploads a photo and writes tonight's page, sent to `to` (users). Returns the page. */
+export async function writePage(user, { to = [], text = "A good day." } = {}) {
+  const { today } = await rpc(user, "tonight");
   const path = newPath(user);
   assert.ifError((await uploadFile(user, path)).error);
-  return rpc(user, "write_entry", { p_day: day, p_storage_path: path, p_text: text, p_taken_at: null });
+  return rpc(user, "write_entry", {
+    p_day: today,
+    p_storage_path: path,
+    p_text: text,
+    p_taken_at: null,
+    p_recipients: to.map((u) => u.id),
+  });
 }
 
 export async function fileExists(path) {

@@ -1,6 +1,6 @@
 -- Push notifications. Three kinds, and nothing that nudges anyone to write:
---   * when the diary opens (once per night, 20:00–22:00 local): "Tonight's page is open — Alice and Bob already wrote";
---   * a friend wrote a page, sent right away to friends whose diary is open (others hear at their opening);
+--   * when the diary opens (once per night, 20:00–22:00 local): "Tonight's page is open — Alice and Bob wrote to you";
+--   * a friend sent you a page, right away (if it's for your current day);
 --   * someone sent you a friend request.
 -- The database decides who to notify; the notify Edge Function talks to APNs.
 
@@ -32,21 +32,27 @@ begin
 end;
 $$;
 
-create function private.on_entry_written()
+-- One call per page sent, naming the new recipients.
+create function private.on_letters_sent()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-  perform private.call_notify(jsonb_build_object('entry_id', new.id));
-  return new;
+  perform private.call_notify(jsonb_build_object(
+    'letter', jsonb_build_object('entry_id', n.entry_id, 'recipient_ids', jsonb_agg(n.user_id))
+  ))
+  from new_rows n
+  group by n.entry_id;
+  return null;
 end;
 $$;
 
-create trigger entries_after_insert
-after insert on public.entries
-for each row execute function private.on_entry_written();
+create trigger entry_recipients_after_insert
+after insert on public.entry_recipients
+referencing new table as new_rows
+for each statement execute function private.on_letters_sent();
 
 create function private.on_friend_request()
 returns trigger
@@ -69,24 +75,22 @@ select cron.schedule('lune-opening-push', '*/15 * * * *', $$ select private.call
 
 -- ─── Targets (service_role only) ───────────────────────────
 
--- A friend wrote: friends whose diary is open now, except across a block.
--- day_label is "tonight" or "yesterday" from the writer's point of view.
-create function public.push_targets_entry(p_entry_id uuid)
-returns table (token text, user_id uuid, writer_name text, day_label text)
+-- A page was sent: the new recipients it still counts as a letter for (friends, no block, their day).
+create function public.push_targets_letter(p_entry_id uuid, p_recipient_ids uuid[])
+returns table (token text, user_id uuid, writer_name text)
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select d.token, d.user_id, w.display_name,
-         case when e.day = private.user_today(e.user_id) then 'tonight' else 'yesterday' end
-  from public.entries e
+  select d.token, d.user_id, w.display_name
+  from public.entry_recipients r
+  join public.entries e on e.id = r.entry_id
   join public.profiles w on w.id = e.user_id
-  join public.friendships f on e.user_id in (f.user_a, f.user_b)
-  join public.devices d on d.user_id = case when f.user_a = e.user_id then f.user_b else f.user_a end
-  where e.id = p_entry_id
-    and private.is_open(d.user_id)
-    and not private.is_blocked_between(e.user_id, d.user_id)
+  join public.devices d on d.user_id = r.user_id
+  where r.entry_id = p_entry_id
+    and r.user_id = any (p_recipient_ids)
+    and private.is_letter_to(e.id, r.user_id)
 $$;
 
 create function public.push_targets_request(p_from_id uuid, p_to_id uuid)
@@ -104,7 +108,7 @@ as $$
 $$;
 
 -- People whose diary opened in the last two hours and who haven't had tonight's push yet.
--- Marks them so it's sent once per night. writers = friends who already wrote tonight, earliest first.
+-- Marks them so it's sent once per night. writers = friends who already sent them tonight's page, earliest first.
 create function public.push_targets_opening()
 returns table (token text, user_id uuid, writers text[])
 language sql
@@ -129,12 +133,12 @@ as $$
   )
   select d.token, m.user_id, array(
     select wp.display_name
-    from public.entries e
+    from public.entry_recipients r
+    join public.entries e on e.id = r.entry_id
     join public.profiles wp on wp.id = e.user_id
-    where e.day = m.day
-      and private.are_friends(m.user_id, e.user_id)
-      and not private.is_blocked_between(m.user_id, e.user_id)
-    order by e.created_at
+    where r.user_id = m.user_id
+      and private.is_letter_to(e.id, m.user_id)
+    order by r.sent_at
   )
   from marked m
   join public.devices d on d.user_id = m.user_id
@@ -151,13 +155,13 @@ as $$
 $$;
 
 revoke execute on function
-  public.push_targets_entry(uuid),
+  public.push_targets_letter(uuid, uuid[]),
   public.push_targets_request(uuid, uuid),
   public.push_targets_opening(),
   public.remove_device_tokens(text[])
 from public, anon, authenticated;
 grant execute on function
-  public.push_targets_entry(uuid),
+  public.push_targets_letter(uuid, uuid[]),
   public.push_targets_request(uuid, uuid),
   public.push_targets_opening(),
   public.remove_device_tokens(text[])

@@ -42,15 +42,14 @@ async function notifyResultAfter(action) {
   return JSON.parse(psql(`select content from net._http_response where id > ${before} order by id limit 1`));
 }
 
-test("a new page notifies friends whose diary is open", async () => {
+test("a letter notifies its recipients", async () => {
   const [alice, bob, carol] = [await signUp("Alice"), await signUp("Bob"), await signUp("Carol")];
   await befriend(alice, bob);
   await befriend(alice, carol);
   await rpc(bob, "register_device", { p_token: `bob-${randomUUID()}` });
   await rpc(carol, "register_device", { p_token: `carol-${randomUUID()}` });
-  await rpc(carol, "set_time_zone", { p_time_zone: zoneForHour(12) });
 
-  assert.deepEqual(await notifyResultAfter(() => writePage(alice)), { sent: 0, skipped: 1 }, "Bob is open; Carol is asleep");
+  assert.deepEqual(await notifyResultAfter(() => writePage(alice, { to: [bob] })), { sent: 0, skipped: 1 }, "Bob, not Carol");
 });
 
 test("a friend request notifies the person asked", async () => {

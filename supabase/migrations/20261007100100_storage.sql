@@ -1,5 +1,6 @@
 -- Page photos: private bucket, path {user_id}/{uuid}.jpg (lowercase UUIDs).
--- The app uploads the file first, then calls write_entry. No update/delete policies: a photo can't be changed.
+-- The app uploads the file first, then calls write_entry (or update_entry to swap the photo of an unsent
+-- page; the old file is queued for deletion). No update/delete policies: files themselves never change.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('entries', 'entries', false, 4 * 1024 * 1024, array['image/jpeg']);
@@ -13,8 +14,8 @@ as $$
       || '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$'
 $$;
 
--- Only into your own folder, while your diary is open, while you still have a day to write,
--- and with at most 3 files uploaded in the last day that never became a page.
+-- Only into your own folder, when there's a photo you could use: tonight's page while writing is open,
+-- or a page you haven't sent to anyone. At most 3 files uploaded in the last day that never became a page.
 create function private.can_upload_object(p_name text)
 returns boolean
 language plpgsql
@@ -24,17 +25,14 @@ set search_path = ''
 as $$
 declare
   uid uuid := auth.uid();
-  today date;
 begin
   if uid is null or p_name !~ private.entry_path_pattern() or split_part(p_name, '/', 1) <> uid::text then
     return false;
   end if;
-  if not private.is_open(uid) then
-    return false;
-  end if;
-
-  today := private.user_today(uid);
-  if (select count(*) from public.entries where user_id = uid and day in (today, today - 1)) >= 2 then
+  if not (
+    (private.can_write(uid) and not private.has_written(uid, private.user_today(uid)))
+    or exists (select 1 from public.entries where user_id = uid and sent_at is null)
+  ) then
     return false;
   end if;
 

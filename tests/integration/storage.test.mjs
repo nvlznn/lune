@@ -17,7 +17,7 @@ async function runCleanup() {
   assert.equal(res.status, 200, await res.text());
 }
 
-let alice, bob, stranger, alicePage;
+let alice, bob, stranger, alicePage, bobPage;
 
 before(async () => {
   [alice, bob, stranger] = [await signUp("Alice"), await signUp("Bob"), await signUp("Stranger")];
@@ -25,7 +25,7 @@ before(async () => {
 });
 
 test("a page's photo uploads into your own folder", async () => {
-  alicePage = await writePage(alice, { text: "Tonight" });
+  alicePage = await writePage(alice, { to: [bob], text: "Tonight" });
   assert.ok(await fileExists(alicePage.storage_path));
 });
 
@@ -40,11 +40,11 @@ test("not into someone else's folder, and only JPEGs up to 4 MB", async () => {
   assert.ok((await uploadFile(bob, newPath(bob), Buffer.alloc(4 * 1024 * 1024 + 1))).error);
 });
 
-test("a friend can't read the photo until they write tonight", async () => {
+test("a recipient can't read the photo until they write tonight", async () => {
   const locked = await bob.client.storage.from("entries").createSignedUrl(alicePage.storage_path, 60);
   assert.ok(locked.error);
 
-  await writePage(bob);
+  bobPage = await writePage(bob);
   const { data, error } = await bob.client.storage.from("entries").createSignedUrl(alicePage.storage_path, 60);
   assert.ifError(error);
   const res = await fetch(data.signedUrl);
@@ -57,13 +57,22 @@ test("strangers can't read it, even with the path", async () => {
   assert.ok((await stranger.client.storage.from("entries").download(alicePage.storage_path)).error);
 });
 
-test("photos can't be overwritten or deleted", async () => {
+test("files can't be overwritten or deleted directly", async () => {
   const overwrite = await alice.client.storage
     .from("entries")
     .upload(alicePage.storage_path, JPEG, { contentType: "image/jpeg", upsert: true });
   assert.ok(overwrite.error);
   await alice.client.storage.from("entries").remove([alicePage.storage_path]);
   assert.ok(await fileExists(alicePage.storage_path));
+});
+
+test("swapping the photo of an unsent page deletes the old one after cleanup", async () => {
+  const path = newPath(bob);
+  assert.ifError((await uploadFile(bob, path)).error);
+  await rpc(bob, "update_entry", { p_entry_id: bobPage.entry_id, p_text: "New photo", p_storage_path: path });
+  await runCleanup();
+  assert.equal(await fileExists(bobPage.storage_path), false, "the old photo is gone");
+  assert.ok(await fileExists(path), "the new one stays");
 });
 
 test("a replaced avatar is deleted by cleanup; friends can read the current one", async () => {

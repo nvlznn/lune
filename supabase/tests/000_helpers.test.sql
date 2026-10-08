@@ -108,8 +108,8 @@ begin
 end;
 $$;
 
--- Writes a page as the user through write_entry. p_days_ago: 0 = today, 1 = yesterday.
-create or replace function tests.write(p_user_id uuid, p_days_ago integer default 0, p_text text default 'A good day.')
+-- Writes tonight's page as the user through write_entry, sent to p_to (empty: only for themselves).
+create or replace function tests.write(p_user_id uuid, p_to uuid[] default '{}', p_text text default 'A good day.')
 returns uuid
 language plpgsql
 as $$
@@ -118,23 +118,24 @@ declare
   result jsonb;
 begin
   perform tests.login_as(p_user_id);
-  result := public.write_entry(private.user_today(p_user_id) - p_days_ago, path, p_text, null);
+  result := public.write_entry(private.user_today(p_user_id), path, p_text, null, p_to);
   perform tests.logout();
   return (result ->> 'entry_id')::uuid;
 end;
 $$;
 
--- A page from any day, straight into the table.
-create or replace function tests.page_on(p_user_id uuid, p_day date)
+-- A page from any day, straight into the table, sent to p_to.
+create or replace function tests.page_on(p_user_id uuid, p_day date, p_to uuid[] default '{}')
 returns uuid
 language plpgsql
 as $$
 declare
   eid uuid;
 begin
-  insert into public.entries (user_id, day, storage_path, text)
-  values (p_user_id, p_day, tests.put_object(p_user_id), 'Older page.')
+  insert into public.entries (user_id, day, storage_path, text, sent_at)
+  values (p_user_id, p_day, tests.put_object(p_user_id), 'Older page.', case when cardinality(p_to) > 0 then now() end)
   returning id into eid;
+  insert into public.entry_recipients (entry_id, user_id) select eid, unnest(p_to);
   return eid;
 end;
 $$;
@@ -153,13 +154,22 @@ begin
 end;
 $$;
 
--- Friends' page ids someone sees for a day (0 = today, 1 = yesterday).
-create or replace function tests.friend_pages(p_user_id uuid, p_days_ago integer default 0)
+-- Letters someone can open right now, in the order tonight() lists them.
+create or replace function tests.letters(p_user_id uuid)
 returns uuid[]
 language sql
 as $$
-  select coalesce(array_agg((page ->> 'entry_id')::uuid), '{}')
-  from jsonb_array_elements(tests.tonight(p_user_id) -> 'days' -> p_days_ago -> 'friends') as page
+  select coalesce(array_agg((page ->> 'entry_id')::uuid order by i), '{}')
+  from jsonb_array_elements(tests.tonight(p_user_id) -> 'letters') with ordinality as t (page, i)
+$$;
+
+-- Names on the letters someone can't open yet.
+create or replace function tests.locked(p_user_id uuid)
+returns text[]
+language sql
+as $$
+  select coalesce(array_agg(card ->> 'name' order by i), '{}')
+  from jsonb_array_elements(tests.tonight(p_user_id) -> 'locked') with ordinality as t (card, i)
 $$;
 
 grant execute on all functions in schema tests to authenticated, anon;

@@ -1,8 +1,8 @@
 // Sends Lune's push notifications. The database decides who gets what; this only talks to APNs.
 // Called with NOTIFY_SECRET by:
-//   * the entries insert trigger      {"entry_id": "..."}               → "Alice wrote tonight's page."
-//   * the friend_requests trigger     {"request": {"from_id", "to_id"}} → "Alice wants to be friends."
-//   * pg_cron every 15 minutes        {"opening": true}                 → "Tonight's page is open — Alice and Bob already wrote."
+//   * the entry_recipients trigger    {"letter": {"entry_id", "recipient_ids"}} → "Alice sent you tonight's page."
+//   * the friend_requests trigger     {"request": {"from_id", "to_id"}}         → "Alice wants to be friends."
+//   * pg_cron every 15 minutes        {"opening": true}                         → "Tonight's page is open — Alice and Bob wrote to you."
 //
 // Secrets: NOTIFY_SECRET, APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY (contents of the .p8 file),
 // APNS_BUNDLE_ID (dev.noky.lune), APNS_ENVIRONMENT ("sandbox" or "production").
@@ -67,12 +67,15 @@ Deno.serve(async (req) => {
 
 // deno-lint-ignore no-explicit-any
 async function messagesFor(admin: any, payload: any): Promise<Message[]> {
-  if (typeof payload.entry_id === "string") {
-    const { data, error } = await admin.rpc("push_targets_entry", { p_entry_id: payload.entry_id });
+  if (payload.letter) {
+    const { data, error } = await admin.rpc("push_targets_letter", {
+      p_entry_id: payload.letter.entry_id,
+      p_recipient_ids: payload.letter.recipient_ids,
+    });
     if (error) throw error.message;
-    return (data ?? []).map((t: { token: string; writer_name: string; day_label: string }) => ({
+    return (data ?? []).map((t: { token: string; writer_name: string }) => ({
       token: t.token,
-      body: `${t.writer_name} wrote ${t.day_label === "tonight" ? "tonight’s" : "yesterday’s"} page.`,
+      body: `${t.writer_name} sent you tonight’s page.`,
       kind: "tonight",
     }));
   }
@@ -94,7 +97,7 @@ async function messagesFor(admin: any, payload: any): Promise<Message[]> {
     return (data ?? []).map((t: { token: string; writers: string[] }) => ({
       token: t.token,
       body: t.writers.length
-        ? `Tonight’s page is open — ${names(t.writers)} already wrote.`
+        ? `Tonight’s page is open — ${names(t.writers)} wrote to you.`
         : "Tonight’s page is open.",
       kind: "tonight",
     }));

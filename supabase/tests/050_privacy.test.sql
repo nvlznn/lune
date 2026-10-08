@@ -1,24 +1,31 @@
 -- Files, profiles, cleanup, account deletion.
 begin;
-select plan(12);
+select plan(13);
 
 select tests.remember('alice', tests.create_user('alice'));
 select tests.remember('bob', tests.create_user('bob'));
+select tests.remember('carol', tests.create_user('carol'));
 select tests.remember('stranger', tests.create_user('stranger'));
 select tests.befriend(tests.id('alice'), tests.id('bob'));
+select tests.befriend(tests.id('alice'), tests.id('carol'));
 
-select tests.remember('a1', tests.write(tests.id('alice')));
+select tests.remember('a1', tests.write(tests.id('alice'), array[tests.id('bob')]));
 select set_config('tests.a_path', (select storage_path from public.entries where id = tests.id('a1')), false);
 
 -- Files follow the same rule as pages.
 select tests.login_as(tests.id('bob'));
 select is((select count(*)::integer from storage.objects where name = current_setting('tests.a_path')), 0,
-  'a friend can''t read the file before writing tonight');
+  'a recipient can''t read the file before writing tonight');
 select tests.logout();
 select tests.write(tests.id('bob'));
 select tests.login_as(tests.id('bob'));
 select is((select count(*)::integer from storage.objects where name = current_setting('tests.a_path')), 1,
-  'after writing, the friend can read it');
+  'after writing, the recipient can read it');
+select tests.logout();
+select tests.write(tests.id('carol'));
+select tests.login_as(tests.id('carol'));
+select is((select count(*)::integer from storage.objects where name = current_setting('tests.a_path')), 0,
+  'a friend it wasn''t sent to can''t');
 select tests.logout();
 select tests.login_as(tests.id('stranger'));
 select is((select count(*)::integer from storage.objects where name = current_setting('tests.a_path')), 0,

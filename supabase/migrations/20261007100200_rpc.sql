@@ -1,8 +1,8 @@
 -- RPCs the app calls. Errors are raised as `raise exception '<code>'`; the app maps the message to text:
 --   not_authenticated, profile_required, invalid_time_zone, closed, invalid_day, already_written,
---   invalid_path, file_missing, text_required, text_too_long, entry_not_found,
+--   invalid_path, file_missing, text_required, text_too_long, entry_not_found, already_sent, expired,
 --   invalid_username, username_taken, too_many_attempts, own_username, too_many_friends,
---   request_not_found, user_not_found
+--   request_not_found, user_not_found, invalid_group_name, too_many_groups, group_not_found
 
 -- ─── Helpers ───────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ begin
 end;
 $$;
 
--- A page as the app sees it. Seen by is included only for the writer.
+-- A page as the app sees it. Who it was sent to is included only for the writer.
 create function private.entry_json(p_entry_id uuid, p_viewer uuid)
 returns jsonb
 language sql
@@ -133,17 +133,89 @@ as $$
     'taken_at', e.taken_at,
     'created_at', e.created_at,
     'edited_at', e.edited_at,
-    'seen_by', case when e.user_id = p_viewer then coalesce((
-      select jsonb_agg(jsonb_build_object('user_id', v.viewer_id, 'name', vp.display_name, 'avatar_path', vp.avatar_path, 'seen_at', v.viewed_at)
-                       order by v.viewed_at)
-      from public.entry_views v
-      join public.profiles vp on vp.id = v.viewer_id
-      where v.entry_id = e.id and not private.is_blocked_between(p_viewer, v.viewer_id)
+    'sent_at', e.sent_at,
+    'recipients', case when e.user_id = p_viewer then coalesce((
+      select jsonb_agg(jsonb_build_object('user_id', r.user_id, 'name', rp.display_name, 'avatar_path', rp.avatar_path)
+                       order by lower(rp.display_name))
+      from public.entry_recipients r
+      join public.profiles rp on rp.id = r.user_id
+      where r.entry_id = e.id
     ), '[]'::jsonb) end
   )
   from public.entries e
   join public.profiles p on p.id = e.user_id
   where e.id = p_entry_id
+$$;
+
+-- Sends a page to those of p_recipients who are the writer's friends (others are skipped: someone may
+-- have left since the app loaded its list). The first recipient turns the page into a letter.
+create function private.send_entry(p_entry_id uuid, p_writer uuid, p_recipients uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  with added as (
+    insert into public.entry_recipients (entry_id, user_id)
+    select p_entry_id, r.id
+    from (select distinct unnest(coalesce(p_recipients, '{}')) as id) r
+    where r.id <> p_writer
+      and private.are_friends(p_writer, r.id)
+      and not private.is_blocked_between(p_writer, r.id)
+    on conflict do nothing
+    returning 1
+  )
+  update public.entries set sent_at = coalesce(sent_at, now())
+  where id = p_entry_id and exists (select 1 from added);
+end;
+$$;
+
+-- A capture time more than a day in the future is treated as unknown.
+create function private.clean_taken_at(p_taken_at timestamp)
+returns timestamp
+language sql
+stable
+set search_path = ''
+as $$
+  select case when p_taken_at <= (now() at time zone 'UTC') + interval '1 day' then p_taken_at end
+$$;
+
+-- Your photo, uploaded to entries/{your id}/{uuid}.jpg.
+create function private.check_photo_path(p_user_id uuid, p_path text)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if p_path is null or p_path !~ private.entry_path_pattern() or split_part(p_path, '/', 1) <> p_user_id::text then
+    raise exception 'invalid_path';
+  end if;
+  if not exists (select 1 from storage.objects where bucket_id = 'entries' and name = p_path) then
+    raise exception 'file_missing';
+  end if;
+end;
+$$;
+
+create function private.check_text(p_text text)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  body text := private.normalize_text(p_text);
+begin
+  if body is null then
+    raise exception 'text_required';
+  end if;
+  if char_length(body) > 500 then
+    raise exception 'text_too_long';
+  end if;
+  return body;
+end;
 $$;
 
 -- ─── Profile ───────────────────────────────────────────────
@@ -283,12 +355,13 @@ $$;
 
 -- ─── Tonight ───────────────────────────────────────────────
 
--- Today and yesterday as the caller sees them. While open: your pages, friends' pages for the
--- days you wrote (recorded as seen), and who wrote. While closed: your pages, who wrote, and when it opens.
+-- The caller's current day: their page, and the letters friends sent them for it. Letters open once
+-- you've written today's page (sending it to anyone or no one); until then they're listed as locked.
+-- A day you didn't write stays locked until it ends.
 create function public.tonight()
 returns jsonb
 language plpgsql
-volatile
+stable
 security definer
 set search_path = ''
 as $$
@@ -298,64 +371,112 @@ declare
   local_now timestamp := now() at time zone tz;
   today date := private.user_today(uid);
   open boolean := private.is_open(uid);
-  visible uuid[];
+  written boolean := private.has_written(uid, today);
 begin
-  -- Friends' pages you can see right now.
-  select coalesce(array_agg(e.id), '{}')
-  into visible
-  from public.entries e
-  where open
-    and e.user_id <> uid
-    and e.day in (today, today - 1)
-    and private.are_friends(uid, e.user_id)
-    and not private.is_blocked_between(uid, e.user_id)
-    and exists (select 1 from public.entries mine where mine.user_id = uid and mine.day = e.day);
-
-  insert into public.entry_views (viewer_id, entry_id)
-  select uid, unnest(visible)
-  on conflict do nothing;
-
   return jsonb_build_object(
-    'open', open,
     'today', today,
-    -- Closed between 04:00 and 20:00, so it opens at 20:00 on the same local date.
+    'open', open,
+    -- Writing closes at 04:00 and reopens at 20:00 on the same local date.
     'opens_at', case when open then null else (local_now::date + time '20:00') at time zone tz end,
     'closes_at', case when open then ((today + 1) + time '04:00') at time zone tz end,
-    'days', (
-      select jsonb_agg(jsonb_build_object(
-        'day', d.day,
-        'mine', (
-          select private.entry_json(e.id, uid) from public.entries e where e.user_id = uid and e.day = d.day
-        ),
-        'friends', coalesce((
-          select jsonb_agg(private.entry_json(e.id, uid) order by e.created_at desc)
-          from public.entries e
-          where e.id = any (visible) and e.day = d.day
-        ), '[]'::jsonb),
-        'writers', coalesce((
-          select jsonb_agg(p.display_name order by e.created_at)
-          from public.entries e
-          join public.profiles p on p.id = e.user_id
-          where e.day = d.day
-            and e.user_id <> uid
-            and private.are_friends(uid, e.user_id)
-            and not private.is_blocked_between(uid, e.user_id)
-        ), '[]'::jsonb)
-      ) order by d.day desc)
-      from (values (today), (today - 1)) as d (day)
-    )
+    -- When today's letters disappear and a new day starts.
+    'ends_at', ((today + 1) + time '20:00') at time zone tz,
+    'mine', (select private.entry_json(e.id, uid) from public.entries e where e.user_id = uid and e.day = today),
+    'letters', case when written then coalesce((
+      select jsonb_agg(private.entry_json(e.id, uid) order by r.sent_at desc, e.id)
+      from public.entry_recipients r
+      join public.entries e on e.id = r.entry_id
+      where r.user_id = uid and private.is_letter_to(e.id, uid)
+    ), '[]'::jsonb) else '[]'::jsonb end,
+    'locked', case when written then '[]'::jsonb else coalesce((
+      select jsonb_agg(jsonb_build_object('user_id', p.id, 'name', p.display_name, 'avatar_path', p.avatar_path, 'sent_at', r.sent_at)
+                       order by r.sent_at desc, e.id)
+      from public.entry_recipients r
+      join public.entries e on e.id = r.entry_id
+      join public.profiles p on p.id = e.user_id
+      where r.user_id = uid and private.is_letter_to(e.id, uid)
+    ), '[]'::jsonb) end
   );
 end;
 $$;
 
 -- ─── Writing ───────────────────────────────────────────────
 
--- Upload the photo to entries/{your id}/{uuid}.jpg first, then call this.
--- Only while open, for today or (backfilling) yesterday, once per day.
+-- Upload the photo to entries/{your id}/{uuid}.jpg first, then call this. Only tonight's page, once,
+-- while writing is open. p_recipients are friends' ids (the app expands "all friends" and groups);
+-- an empty list keeps the page to yourself. Sending is immediate and final.
 create function public.write_entry(
   p_day date,
   p_storage_path text,
   p_text text,
+  p_taken_at timestamp default null,
+  p_recipients uuid[] default '{}'
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  body text := private.check_text(p_text);
+  new_id uuid;
+begin
+  if not private.can_write(uid) then
+    raise exception 'closed';
+  end if;
+  if p_day is distinct from private.user_today(uid) then
+    raise exception 'invalid_day';
+  end if;
+  if private.has_written(uid, p_day) then
+    raise exception 'already_written';
+  end if;
+  perform private.check_photo_path(uid, p_storage_path);
+
+  begin
+    insert into public.entries (user_id, day, storage_path, text, taken_at)
+    values (uid, p_day, p_storage_path, body, private.clean_taken_at(p_taken_at))
+    returning id into new_id;
+  exception when unique_violation then
+    raise exception 'already_written';
+  end;
+
+  perform private.send_entry(new_id, uid, p_recipients);
+  return private.entry_json(new_id, uid);
+end;
+$$;
+
+-- Sends one of your pages to more friends, until its day ends. Once sent it can't be edited.
+create function public.add_recipients(p_entry_id uuid, p_recipients uuid[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  page_day date;
+begin
+  -- Locked so a concurrent edit can't slip in after the page is sent.
+  select day into page_day from public.entries where id = p_entry_id and user_id = uid for update;
+  if not found then
+    raise exception 'entry_not_found';
+  end if;
+  if page_day <> private.user_today(uid) then
+    raise exception 'expired';
+  end if;
+
+  perform private.send_entry(p_entry_id, uid, p_recipients);
+  return private.entry_json(p_entry_id, uid);
+end;
+$$;
+
+-- A page you haven't sent to anyone can be changed any time: its text, and optionally its photo
+-- (upload the new one first; the old file is deleted).
+create function public.update_entry(
+  p_entry_id uuid,
+  p_text text,
+  p_storage_path text default null,
   p_taken_at timestamp default null
 )
 returns jsonb
@@ -365,77 +486,52 @@ set search_path = ''
 as $$
 declare
   uid uuid := private.current_user_with_profile();
-  today date := private.user_today(uid);
-  body text := private.normalize_text(p_text);
-  new_id uuid;
+  body text := private.check_text(p_text);
+  page public.entries;
 begin
-  if not private.is_open(uid) then
-    raise exception 'closed';
+  select * into page from public.entries where id = p_entry_id and user_id = uid for update;
+  if not found then
+    raise exception 'entry_not_found';
   end if;
-  if p_day is null or p_day not in (today, today - 1) then
-    raise exception 'invalid_day';
-  end if;
-  if body is null then
-    raise exception 'text_required';
-  end if;
-  if char_length(body) > 500 then
-    raise exception 'text_too_long';
-  end if;
-  if p_storage_path !~ private.entry_path_pattern() or split_part(p_storage_path, '/', 1) <> uid::text then
-    raise exception 'invalid_path';
-  end if;
-  if exists (select 1 from public.entries where user_id = uid and day = p_day) then
-    raise exception 'already_written';
-  end if;
-  if not exists (select 1 from storage.objects where bucket_id = 'entries' and name = p_storage_path) then
-    raise exception 'file_missing';
+  if page.sent_at is not null then
+    raise exception 'already_sent';
   end if;
 
-  begin
-    insert into public.entries (user_id, day, storage_path, text, taken_at)
-    values (
-      uid, p_day, p_storage_path, body,
-      -- A capture time more than a day in the future is treated as unknown.
-      case when p_taken_at <= (now() at time zone 'UTC') + interval '1 day' then p_taken_at end
-    )
-    returning id into new_id;
-  exception when unique_violation then
-    raise exception 'already_written';
-  end;
+  if p_storage_path is not null and p_storage_path <> page.storage_path then
+    perform private.check_photo_path(uid, p_storage_path);
+    begin
+      update public.entries
+      set storage_path = p_storage_path, taken_at = private.clean_taken_at(p_taken_at)
+      where id = p_entry_id;
+    exception when unique_violation then
+      raise exception 'invalid_path';
+    end;
+  end if;
 
-  return private.entry_json(new_id, uid);
+  update public.entries set text = body, edited_at = now() where id = p_entry_id;
+  return private.entry_json(p_entry_id, uid);
 end;
 $$;
 
--- The text can be edited while the diary is open; the photo can't.
-create function public.edit_entry_text(p_entry_id uuid, p_text text)
-returns jsonb
+-- A page you haven't sent to anyone can be deleted any time (its photo too).
+create function public.delete_entry(p_entry_id uuid)
+returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   uid uuid := private.current_user_with_profile();
-  body text := private.normalize_text(p_text);
+  page public.entries;
 begin
-  if not private.is_open(uid) then
-    raise exception 'closed';
-  end if;
-  if body is null then
-    raise exception 'text_required';
-  end if;
-  if char_length(body) > 500 then
-    raise exception 'text_too_long';
-  end if;
-
-  update public.entries
-  set text = body, edited_at = now()
-  where id = p_entry_id and user_id = uid;
+  select * into page from public.entries where id = p_entry_id and user_id = uid for update;
   if not found then
     raise exception 'entry_not_found';
   end if;
-
-  return private.entry_json(p_entry_id, uid);
+  if page.sent_at is not null then
+    raise exception 'already_sent';
+  end if;
+  delete from public.entries where id = p_entry_id;
 end;
 $$;
 
@@ -668,6 +764,85 @@ begin
 end;
 $$;
 
+-- ─── Groups ────────────────────────────────────────────────
+-- Your own lists of friends, for sending to several at once. Nobody else sees them.
+
+create function public.groups()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', g.id,
+    'name', g.name,
+    'member_ids', coalesce((select jsonb_agg(m.user_id order by m.user_id) from public.friend_group_members m where m.group_id = g.id), '[]'::jsonb)
+  ) order by lower(g.name), g.created_at), '[]'::jsonb)
+  from public.friend_groups g
+  where g.owner_id = private.current_user_with_profile()
+$$;
+
+-- Creates a group (p_group_id null) or renames it and replaces its members. Non-friends are skipped.
+create function public.save_group(p_group_id uuid, p_name text, p_member_ids uuid[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := private.current_user_with_profile();
+  clean_name text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g'));
+  gid uuid := p_group_id;
+begin
+  if char_length(clean_name) not between 1 and 30 then
+    raise exception 'invalid_group_name';
+  end if;
+
+  if gid is null then
+    perform pg_advisory_xact_lock(hashtextextended('lune:groups-of:' || uid::text, 0));
+    if (select count(*) from public.friend_groups where owner_id = uid) >= 100 then
+      raise exception 'too_many_groups';
+    end if;
+    insert into public.friend_groups (owner_id, name) values (uid, clean_name) returning id into gid;
+  else
+    update public.friend_groups set name = clean_name where id = gid and owner_id = uid;
+    if not found then
+      raise exception 'group_not_found';
+    end if;
+    delete from public.friend_group_members where group_id = gid;
+  end if;
+
+  insert into public.friend_group_members (group_id, user_id)
+  select gid, m.id
+  from (select distinct unnest(coalesce(p_member_ids, '{}')) as id) m
+  where private.are_friends(uid, m.id);
+
+  return (
+    select jsonb_build_object(
+      'id', g.id,
+      'name', g.name,
+      'member_ids', coalesce((select jsonb_agg(m.user_id order by m.user_id) from public.friend_group_members m where m.group_id = g.id), '[]'::jsonb)
+    )
+    from public.friend_groups g where g.id = gid
+  );
+end;
+$$;
+
+create function public.delete_group(p_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.friend_groups where id = p_group_id and owner_id = private.current_user_with_profile();
+  if not found then
+    raise exception 'group_not_found';
+  end if;
+end;
+$$;
+
 -- ─── Push devices ──────────────────────────────────────────
 
 create function public.register_device(p_token text)
@@ -706,8 +881,10 @@ revoke execute on function
   public.set_time_zone(text),
   public.delete_account(),
   public.tonight(),
-  public.write_entry(date, text, text, timestamp),
-  public.edit_entry_text(uuid, text),
+  public.write_entry(date, text, text, timestamp, uuid[]),
+  public.add_recipients(uuid, uuid[]),
+  public.update_entry(uuid, text, text, timestamp),
+  public.delete_entry(uuid),
   public.my_entries(date, integer),
   public.export_entries(),
   public.add_friend(text),
@@ -717,6 +894,9 @@ revoke execute on function
   public.remove_friend(uuid),
   public.block_user(uuid),
   public.report_entry(uuid, text),
+  public.groups(),
+  public.save_group(uuid, text, uuid[]),
+  public.delete_group(uuid),
   public.register_device(text),
   public.unregister_device(text)
 from public, anon;
@@ -731,8 +911,10 @@ grant execute on function
   public.set_time_zone(text),
   public.delete_account(),
   public.tonight(),
-  public.write_entry(date, text, text, timestamp),
-  public.edit_entry_text(uuid, text),
+  public.write_entry(date, text, text, timestamp, uuid[]),
+  public.add_recipients(uuid, uuid[]),
+  public.update_entry(uuid, text, text, timestamp),
+  public.delete_entry(uuid),
   public.my_entries(date, integer),
   public.export_entries(),
   public.add_friend(text),
@@ -742,6 +924,9 @@ grant execute on function
   public.remove_friend(uuid),
   public.block_user(uuid),
   public.report_entry(uuid, text),
+  public.groups(),
+  public.save_group(uuid, text, uuid[]),
+  public.delete_group(uuid),
   public.register_device(text),
   public.unregister_device(text)
 to authenticated;

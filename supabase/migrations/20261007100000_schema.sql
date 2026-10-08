@@ -1,5 +1,6 @@
--- Lune: a nightly exchange diary with friends.
--- One page (photo + text) per person per day; the diary opens 20:00–04:00 in each person's time zone.
+-- Lune: a nightly diary you send to friends like letters.
+-- One page (photo + text) per person per day. A day starts at 20:00 in each person's time zone;
+-- pages are written 20:00–04:00 and a day's letters can be read until 20:00 the next evening.
 -- Every write goes through an RPC (see the rpc migration); clients only read through RLS.
 
 create schema if not exists private;
@@ -48,7 +49,7 @@ create index friend_requests_to_id_idx on public.friend_requests (to_id);
 create table public.entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
-  -- The writer's day (04:00 rollover in their time zone), set by write_entry.
+  -- The writer's day (20:00 rollover in their time zone), set by write_entry.
   day date not null,
   storage_path text not null unique,
   text text not null check (char_length(text) between 1 and 500),
@@ -56,18 +57,37 @@ create table public.entries (
   taken_at timestamp,
   created_at timestamptz not null default now(),
   edited_at timestamptz,
+  -- When the page was first sent to someone. From then on it's a letter: it can't be edited or deleted,
+  -- even if every recipient later leaves. Null while the page is only for its writer.
+  sent_at timestamptz,
   unique (user_id, day)
 );
 create index entries_day_idx on public.entries (day);
 
--- Who saw which page, and when (shown to the writer as "Seen by").
-create table public.entry_views (
-  viewer_id uuid not null references public.profiles (id) on delete cascade,
+-- Who a page was sent to. Recipients were friends when it was sent; they read it until the day ends.
+create table public.entry_recipients (
   entry_id uuid not null references public.entries (id) on delete cascade,
-  viewed_at timestamptz not null default now(),
-  primary key (viewer_id, entry_id)
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  sent_at timestamptz not null default now(),
+  primary key (entry_id, user_id)
 );
-create index entry_views_entry_id_idx on public.entry_views (entry_id);
+create index entry_recipients_user_id_idx on public.entry_recipients (user_id);
+
+-- Groups of friends for sending to several at once. Only their owner knows they exist.
+create table public.friend_groups (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles (id) on delete cascade,
+  name text not null check (char_length(btrim(name)) between 1 and 30),
+  created_at timestamptz not null default now()
+);
+create index friend_groups_owner_id_idx on public.friend_groups (owner_id);
+
+create table public.friend_group_members (
+  group_id uuid not null references public.friend_groups (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  primary key (group_id, user_id)
+);
+create index friend_group_members_user_id_idx on public.friend_group_members (user_id);
 
 create table public.blocks (
   blocker_id uuid not null references public.profiles (id) on delete cascade,
@@ -116,23 +136,45 @@ create table private.window_pushes (
   primary key (user_id, day)
 );
 
--- A deleted page's photo goes into the deletion queue.
-create function private.on_entry_deleted()
+-- A deleted page's photo, or one replaced while the page was unsent, goes into the deletion queue.
+create function private.on_entry_photo_dropped()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-  insert into private.storage_deletions (path) values (old.storage_path)
-  on conflict do nothing;
+  if tg_op = 'DELETE' or new.storage_path is distinct from old.storage_path then
+    insert into private.storage_deletions (path) values (old.storage_path)
+    on conflict do nothing;
+  end if;
+  return coalesce(new, old);
+end;
+$$;
+
+create trigger entries_photo_dropped
+after update of storage_path or delete on public.entries
+for each row execute function private.on_entry_photo_dropped();
+
+-- Someone who stops being your friend leaves your groups.
+create function private.on_friendship_ended()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.friend_group_members m
+  using public.friend_groups g
+  where g.id = m.group_id
+    and ((g.owner_id = old.user_a and m.user_id = old.user_b) or (g.owner_id = old.user_b and m.user_id = old.user_a));
   return old;
 end;
 $$;
 
-create trigger entries_after_delete
-after delete on public.entries
-for each row execute function private.on_entry_deleted();
+create trigger friendships_after_delete
+after delete on public.friendships
+for each row execute function private.on_friendship_ended();
 
 -- A replaced or deleted avatar goes into the deletion queue.
 create function private.on_avatar_replaced()
@@ -155,7 +197,8 @@ after update of avatar_path or delete on public.profiles
 for each row execute function private.on_avatar_replaced();
 
 -- ─── Time ──────────────────────────────────────────────────
--- A day runs from 04:00 to 04:00 local time; the diary is open from 20:00 to 04:00.
+-- A day runs from 20:00 to 20:00 local time. Pages are written from 20:00 to 04:00 (the diary is
+-- "open"); the day's letters can be read until it ends at 20:00 the next evening.
 
 create function private.day_at(p_time_zone text, p_at timestamptz)
 returns date
@@ -163,7 +206,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select ((p_at at time zone p_time_zone) - interval '4 hours')::date
+  select ((p_at at time zone p_time_zone) - interval '20 hours')::date
 $$;
 
 create function private.is_open_at(p_time_zone text, p_at timestamptz)
@@ -206,6 +249,26 @@ as $$
   select private.is_open_at(private.time_zone_of(p_user_id), now())
 $$;
 
+-- Writing is accepted for 10 minutes after 04:00, so a page started before closing can still be sent.
+create function private.can_write_at(p_time_zone text, p_at timestamptz)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select private.is_open_at(p_time_zone, p_at) or private.is_open_at(p_time_zone, p_at - interval '10 minutes')
+$$;
+
+create function private.can_write(p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select private.can_write_at(private.time_zone_of(p_user_id), now())
+$$;
+
 -- ─── Relationships ─────────────────────────────────────────
 
 create function private.are_friends(a uuid, b uuid)
@@ -234,8 +297,37 @@ as $$
   )
 $$;
 
--- Your own pages always. A friend's page only while your diary is open, for your today or
--- yesterday, if you wrote that day too, and neither of you blocked the other.
+-- A letter someone sent you: still friends, no block, and from your current day.
+-- Whether you've unlocked it is separate (has_written).
+create function private.is_letter_to(p_entry_id uuid, p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.entries e
+    join public.entry_recipients r on r.entry_id = e.id
+    where e.id = p_entry_id
+      and r.user_id = p_user_id
+      and e.day = private.user_today(p_user_id)
+      and private.are_friends(p_user_id, e.user_id)
+      and not private.is_blocked_between(p_user_id, e.user_id)
+  )
+$$;
+
+create function private.has_written(p_user_id uuid, p_day date)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from public.entries where user_id = p_user_id and day = p_day)
+$$;
+
+-- Your own pages always. Someone else's only if it's a letter to you for today and you wrote today too.
 create function private.can_view_entry(p_entry_id uuid)
 returns boolean
 language sql
@@ -248,15 +340,7 @@ as $$
     where e.id = p_entry_id
       and (
         e.user_id = auth.uid()
-        or (
-          private.are_friends(auth.uid(), e.user_id)
-          and not private.is_blocked_between(auth.uid(), e.user_id)
-          and private.is_open(auth.uid())
-          and e.day in (private.user_today(auth.uid()), private.user_today(auth.uid()) - 1)
-          and exists (
-            select 1 from public.entries mine where mine.user_id = auth.uid() and mine.day = e.day
-          )
-        )
+        or (private.is_letter_to(e.id, auth.uid()) and private.has_written(auth.uid(), e.day))
       )
   )
 $$;
@@ -267,8 +351,12 @@ grant execute on function
   private.time_zone_of(uuid),
   private.user_today(uuid),
   private.is_open(uuid),
+  private.can_write_at(text, timestamptz),
+  private.can_write(uuid),
   private.are_friends(uuid, uuid),
   private.is_blocked_between(uuid, uuid),
+  private.is_letter_to(uuid, uuid),
+  private.has_written(uuid, date),
   private.can_view_entry(uuid)
 to authenticated;
 
@@ -279,7 +367,9 @@ alter table public.profiles enable row level security;
 alter table public.friendships enable row level security;
 alter table public.friend_requests enable row level security;
 alter table public.entries enable row level security;
-alter table public.entry_views enable row level security;
+alter table public.entry_recipients enable row level security;
+alter table public.friend_groups enable row level security;
+alter table public.friend_group_members enable row level security;
 alter table public.blocks enable row level security;
 alter table public.reports enable row level security;
 alter table public.devices enable row level security;
@@ -296,13 +386,22 @@ create policy "friend_requests: own" on public.friend_requests
 for select to authenticated
 using ((select auth.uid()) in (from_id, to_id));
 
-create policy "entries: own or visible friend pages" on public.entries
+create policy "entries: own or unlocked letters" on public.entries
 for select to authenticated
 using (private.can_view_entry(id));
 
-create policy "entry_views: own" on public.entry_views
+-- Writers see who they sent to; recipients don't see who else got it.
+create policy "entry_recipients: own pages" on public.entry_recipients
 for select to authenticated
-using (viewer_id = (select auth.uid()));
+using (exists (select 1 from public.entries e where e.id = entry_id and e.user_id = (select auth.uid())));
+
+create policy "friend_groups: own" on public.friend_groups
+for select to authenticated
+using (owner_id = (select auth.uid()));
+
+create policy "friend_group_members: own groups" on public.friend_group_members
+for select to authenticated
+using (exists (select 1 from public.friend_groups g where g.id = group_id and g.owner_id = (select auth.uid())));
 
 create policy "blocks: own" on public.blocks
 for select to authenticated
