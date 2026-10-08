@@ -1,10 +1,10 @@
 import StoreKit
 import SwiftUI
 
-/// Account: photo, name, username, Lune+, legal and support links, Sign Out, Delete Account.
+/// Account: photo, name, username, Lune Premium, legal and support links, Sign Out, Delete Account.
 struct AccountSheet: View {
     @Environment(APIClient.self) private var api
-    @Environment(LunePlus.self) private var plus
+    @Environment(LunePremium.self) private var premium
     @Environment(\.dismiss) private var dismiss
     @State private var showPaywall = false
     @State private var manageSubscription = false
@@ -36,14 +36,14 @@ struct AccountSheet: View {
                 }
 
                 Section {
-                    if plus.isActive {
-                        LabeledContent("Lune+", value: "Active")
+                    if premium.isActive {
+                        LabeledContent("Lune Premium", value: "Active")
                         Button("Manage Subscription") { manageSubscription = true }
                     } else {
-                        Button("Lune+") { showPaywall = true }
+                        Button("Lune Premium") { showPaywall = true }
                     }
                 } footer: {
-                    Text("Lune+ lets you read your whole diary, not just the last \(LunePlus.freeDays) days.")
+                    Text("Lune Premium lets you read your whole diary, not just the last \(LunePremium.freeDays) days.")
                 }
 
                 Section {
@@ -79,7 +79,7 @@ struct AccountSheet: View {
                     }
                     .disabled(isDeleting)
                 } footer: {
-                    Text("Your account, your diary and your friendships will be permanently deleted. A Lune+ subscription is managed by Apple and needs to be canceled separately.")
+                    Text("Your account, your diary and your friendships will be permanently deleted. A Lune Premium subscription is managed by Apple and needs to be canceled separately.")
                 }
             }
             .navigationTitle("Account")

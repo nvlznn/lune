@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import UniformTypeIdentifiers
-@testable import Swapee
+@testable import Lune
 
 /// Runs the real client against local Supabase (`supabase start`). Skipped when it isn't running.
 @Suite(.serialized, .timeLimit(.minutes(1)), .enabled("needs local Supabase") { await LocalSupabase.isRunning() })

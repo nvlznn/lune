@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Your own pages, by month. Free users see the last 30 days; Lune+ keeps the whole diary. Export is always free.
+/// Your own pages, by month. Free users see the last 30 days; Lune Premium keeps the whole diary. Export is always free.
 struct DiaryView: View {
     @Environment(APIClient.self) private var api
-    @Environment(LunePlus.self) private var plus
+    @Environment(LunePremium.self) private var premium
 
     @State private var entries: [Entry] = []
     @State private var loaded = false
@@ -17,7 +17,7 @@ struct DiaryView: View {
     private var today: String { LuneDay.key(Date.now.addingTimeInterval(-4 * 3600)) }
 
     private var visible: [Entry] {
-        plus.isActive ? entries : entries.filter { LuneDay.daysBetween($0.day, today) < LunePlus.freeDays }
+        premium.isActive ? entries : entries.filter { LuneDay.daysBetween($0.day, today) < LunePremium.freeDays }
     }
     private var lockedCount: Int { entries.count - visible.count }
 
@@ -50,7 +50,7 @@ struct DiaryView: View {
                     Section {
                         Button("Unlock Older Pages") { showPaywall = true }
                     } footer: {
-                        Text("Your pages from more than \(LunePlus.freeDays) days ago are kept safe. Lune+ lets you read your whole diary.")
+                        Text("Your pages from more than \(LunePremium.freeDays) days ago are kept safe. Lune Premium lets you read your whole diary.")
                     }
                 } else if hasMore && loaded && !entries.isEmpty {
                     ProgressView()

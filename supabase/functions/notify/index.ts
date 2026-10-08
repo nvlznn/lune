@@ -5,7 +5,7 @@
 //   * pg_cron every 15 minutes        {"opening": true}                 → "Tonight's page is open — Alice and Bob already wrote."
 //
 // Secrets: NOTIFY_SECRET, APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY (contents of the .p8 file),
-// APNS_BUNDLE_ID (dev.noky.swapee), APNS_ENVIRONMENT ("sandbox" or "production").
+// APNS_BUNDLE_ID (dev.noky.lune), APNS_ENVIRONMENT ("sandbox" or "production").
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 

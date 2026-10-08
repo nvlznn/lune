@@ -12,29 +12,29 @@
 			containerPortal = 4F4D72C08892919891A4484A /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = DE81BDA9EF021D62B47D8581;
-			remoteInfo = Swapee;
+			remoteInfo = Lune;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		160778C66DC7CC5E4136495F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		42D017BFB9E56982EBE79FA3 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
-		435B074F61A387867A9661E4 /* Swapee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Swapee.entitlements; sourceTree = "<group>"; };
+		435B074F61A387867A9661E4 /* Lune.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Lune.entitlements; sourceTree = "<group>"; };
 		8AD301D2836ED737253244BA /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
-		92E2648107745D19D390A19E /* Swapee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Swapee.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwapeeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		92E2648107745D19D390A19E /* Lune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lune.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9CC0A251B0499491211DA74 /* LuneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LuneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4091BC0B615F70EFF7124B4 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		2523DA44F5CD163D2DE67EFD /* Swapee */ = {
+		2523DA44F5CD163D2DE67EFD /* Lune */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Swapee;
+			path = Lune;
 			sourceTree = "<group>";
 		};
-		7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */ = {
+		7BF5CB5706E58A6F6EFE7BE9 /* LuneTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SwapeeTests;
+			path = LuneTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -64,7 +64,7 @@
 				8AD301D2836ED737253244BA /* Debug.xcconfig */,
 				42D017BFB9E56982EBE79FA3 /* Release.xcconfig */,
 				160778C66DC7CC5E4136495F /* Info.plist */,
-				435B074F61A387867A9661E4 /* Swapee.entitlements */,
+				435B074F61A387867A9661E4 /* Lune.entitlements */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -72,8 +72,8 @@
 		D64709053C71C5E65C54CAF6 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				92E2648107745D19D390A19E /* Swapee.app */,
-				A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */,
+				92E2648107745D19D390A19E /* Lune.app */,
+				A9CC0A251B0499491211DA74 /* LuneTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,8 +81,8 @@
 		F58198B0DB7F4E4A75CB959C = {
 			isa = PBXGroup;
 			children = (
-				2523DA44F5CD163D2DE67EFD /* Swapee */,
-				7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */,
+				2523DA44F5CD163D2DE67EFD /* Lune */,
+				7BF5CB5706E58A6F6EFE7BE9 /* LuneTests */,
 				73B99886A91F7DBE15AC77E4 /* Config */,
 				D64709053C71C5E65C54CAF6 /* Products */,
 			);
@@ -91,9 +91,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A0E371F97E3F05AA62C0610A /* SwapeeTests */ = {
+		A0E371F97E3F05AA62C0610A /* LuneTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "SwapeeTests" */;
+			buildConfigurationList = 43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "LuneTests" */;
 			buildPhases = (
 				ED7867CF767919CD224F8437 /* Sources */,
 				273DE589FB995C542551780F /* Frameworks */,
@@ -105,16 +105,16 @@
 				7CBB32C2DA1D8FAE6D8FF58A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				7BF5CB5706E58A6F6EFE7BE9 /* SwapeeTests */,
+				7BF5CB5706E58A6F6EFE7BE9 /* LuneTests */,
 			);
-			name = SwapeeTests;
-			productName = SwapeeTests;
-			productReference = A9CC0A251B0499491211DA74 /* SwapeeTests.xctest */;
+			name = LuneTests;
+			productName = LuneTests;
+			productReference = A9CC0A251B0499491211DA74 /* LuneTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		DE81BDA9EF021D62B47D8581 /* Swapee */ = {
+		DE81BDA9EF021D62B47D8581 /* Lune */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Swapee" */;
+			buildConfigurationList = 51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Lune" */;
 			buildPhases = (
 				0717B5FCCBDA71C7C2AC26C0 /* Sources */,
 				E6C4EFF4A8555F297AEA24DB /* Frameworks */,
@@ -125,11 +125,11 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				2523DA44F5CD163D2DE67EFD /* Swapee */,
+				2523DA44F5CD163D2DE67EFD /* Lune */,
 			);
-			name = Swapee;
-			productName = Swapee;
-			productReference = 92E2648107745D19D390A19E /* Swapee.app */;
+			name = Lune;
+			productName = Lune;
+			productReference = 92E2648107745D19D390A19E /* Lune.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -151,7 +151,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Swapee" */;
+			buildConfigurationList = 2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Lune" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -165,8 +165,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				DE81BDA9EF021D62B47D8581 /* Swapee */,
-				A0E371F97E3F05AA62C0610A /* SwapeeTests */,
+				DE81BDA9EF021D62B47D8581 /* Lune */,
+				A0E371F97E3F05AA62C0610A /* LuneTests */,
 			);
 		};
 /* End PBXProject section */
@@ -208,7 +208,7 @@
 /* Begin PBXTargetDependency section */
 		7CBB32C2DA1D8FAE6D8FF58A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = DE81BDA9EF021D62B47D8581 /* Swapee */;
+			target = DE81BDA9EF021D62B47D8581 /* Lune */;
 			targetProxy = C6CBBAFF3EE3205AC5CCABE0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -222,12 +222,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.lune.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swapee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Swapee";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lune.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lune";
 			};
 			name = Release;
 		};
@@ -237,7 +237,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Config/Swapee.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/Lune.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KB6SVY565;
@@ -248,7 +248,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo for tonight’s page.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to the Swapee development server on your Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to the Lune development server on your Mac.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save friends’ photos to your library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -351,12 +351,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.swapee.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.noky.lune.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swapee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Swapee";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lune.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lune";
 			};
 			name = Debug;
 		};
@@ -366,7 +366,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Config/Swapee.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/Lune.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6KB6SVY565;
@@ -377,7 +377,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo for tonight’s page.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to the Swapee development server on your Mac.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to the Lune development server on your Mac.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save friends’ photos to your library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -402,7 +402,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Swapee" */ = {
+		2B239B62A3F369DA470A8FA2 /* Build configuration list for PBXProject "Lune" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				490E5EE96D16D102582154D9 /* Debug */,
@@ -411,7 +411,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "SwapeeTests" */ = {
+		43F3804BB9C04FACA1411DDF /* Build configuration list for PBXNativeTarget "LuneTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CA93D5D7C4D36394E3BAC0AF /* Debug */,
@@ -420,7 +420,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Swapee" */ = {
+		51DDE9F877E63BDF48167750 /* Build configuration list for PBXNativeTarget "Lune" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D5726608C1BD5A63974FCAA2 /* Debug */,

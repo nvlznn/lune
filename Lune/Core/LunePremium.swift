@@ -1,13 +1,13 @@
 import Observation
 import StoreKit
 
-/// Lune+: keeps your whole diary viewable (free users see their last 30 days). Checked on device with StoreKit 2.
+/// Lune Premium: keeps your whole diary viewable (free users see their last 30 days). Checked on device with StoreKit 2.
 @Observable
-final class LunePlus {
-    static let shared = LunePlus()
+final class LunePremium {
+    static let shared = LunePremium()
 
-    static let monthly = "dev.noky.swapee.plus.monthly"
-    static let yearly = "dev.noky.swapee.plus.yearly"
+    static let monthly = "dev.noky.lune.premium.monthly"
+    static let yearly = "dev.noky.lune.premium.yearly"
     static let productIDs = [monthly, yearly]
     /// Free users can look back this many days in their own diary.
     static let freeDays = 30

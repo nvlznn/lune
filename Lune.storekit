@@ -14,7 +14,7 @@
     {
       "id" : "8D1F2A40",
       "localizations" : [],
-      "name" : "Lune+",
+      "name" : "Lune Premium",
       "subscriptions" : [
         {
           "adHocOffers" : [],
@@ -25,11 +25,11 @@
           "internalID" : "A1B2C3D4",
           "introductoryOffer" : null,
           "localizations" : [
-            { "description" : "Read your whole diary.", "displayName" : "Lune+ Monthly", "locale" : "en_US" }
+            { "description" : "Read your whole diary.", "displayName" : "Lune Premium Monthly", "locale" : "en_US" }
           ],
-          "productID" : "dev.noky.swapee.plus.monthly",
+          "productID" : "dev.noky.lune.premium.monthly",
           "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Lune+ Monthly",
+          "referenceName" : "Lune Premium Monthly",
           "subscriptionGroupID" : "8D1F2A40",
           "type" : "RecurringSubscription"
         },
@@ -42,11 +42,11 @@
           "internalID" : "E5F6A7B8",
           "introductoryOffer" : null,
           "localizations" : [
-            { "description" : "Read your whole diary.", "displayName" : "Lune+ Yearly", "locale" : "en_US" }
+            { "description" : "Read your whole diary.", "displayName" : "Lune Premium Yearly", "locale" : "en_US" }
           ],
-          "productID" : "dev.noky.swapee.plus.yearly",
+          "productID" : "dev.noky.lune.premium.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Lune+ Yearly",
+          "referenceName" : "Lune Premium Yearly",
           "subscriptionGroupID" : "8D1F2A40",
           "type" : "RecurringSubscription"
         }

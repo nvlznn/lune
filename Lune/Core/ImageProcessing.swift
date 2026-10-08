@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import UIKit
 import UniformTypeIdentifiers
 
 /// A photo that's ready to upload.
@@ -62,6 +63,35 @@ nonisolated enum ImageProcessing {
             throw Failure.metadataNotRemoved
         }
         return ProcessedPhoto(jpeg: jpeg, takenAt: takenAt, pixelWidth: image.width, pixelHeight: image.height)
+    }
+
+    /// The photo turned upright (orientation applied), at most `maxPixelSize` on the long edge.
+    static func upright(_ data: Data, maxPixelSize: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ] as CFDictionary)
+    }
+
+    /// A profile photo from a square chosen in "Move and Scale" (in the image's points): 512 × 512, no metadata.
+    static func avatar(from image: UIImage, crop: CGRect) throws -> Data {
+        guard crop.width > 0, crop.height > 0 else { throw Failure.unreadable }
+        let side: CGFloat = 512
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let scaled = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            let factor = side / crop.width
+            image.draw(in: CGRect(
+                x: -crop.minX * factor, y: -crop.minY * factor,
+                width: image.size.width * factor, height: image.size.height * factor
+            ))
+        }
+        guard let jpeg = scaled.jpegData(compressionQuality: 0.85) else { throw Failure.encodingFailed }
+        guard !containsPersonalMetadata(jpeg) else { throw Failure.metadataNotRemoved }
+        return jpeg
     }
 
     /// A profile photo: the centered square, 512 × 512, no metadata.

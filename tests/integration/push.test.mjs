@@ -13,7 +13,7 @@ before(() => {
   // The database reaches the function through Kong; the URL and secret live in Vault.
   psql(`
     delete from vault.secrets where name in ('notify_url', 'notify_secret');
-    select vault.create_secret('http://supabase_kong_swapee:8000/functions/v1/notify', 'notify_url');
+    select vault.create_secret('http://supabase_kong_lune:8000/functions/v1/notify', 'notify_url');
     select vault.create_secret('${NOTIFY_SECRET}', 'notify_secret');
   `);
 });

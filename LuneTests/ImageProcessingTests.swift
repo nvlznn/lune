@@ -2,8 +2,9 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
+import UIKit
 import UniformTypeIdentifiers
-@testable import Swapee
+@testable import Lune
 
 struct ImageProcessingTests {
     @Test func stripsLocationAndCameraMetadataFromJPEG() throws {
@@ -79,6 +80,18 @@ struct ImageProcessingTests {
         #expect(!ImageProcessing.containsPersonalMetadata(avatar))
     }
 
+    @Test func movedAndScaledAvatarsKeepTheChosenSquare() throws {
+        // SamplePhoto is blue with an orange quarter on the left; keep a square from the blue right side.
+        let image = try #require(ImageProcessing.upright(try SamplePhoto.make(width: 1000, height: 800, type: .jpeg), maxPixelSize: 2048))
+        let avatar = try ImageProcessing.avatar(from: UIImage(cgImage: image), crop: CGRect(x: 600, y: 100, width: 300, height: 300))
+        let properties = try SamplePhoto.properties(of: avatar)
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 512)
+        #expect(properties[kCGImagePropertyPixelHeight] as? Int == 512)
+        #expect(!ImageProcessing.containsPersonalMetadata(avatar))
+        let pixel = try SamplePhoto.centerPixel(of: avatar)
+        #expect(pixel.blue > pixel.red, "the crop came from the blue side")
+    }
+
     @Test func rejectsDataThatIsNotAnImage() {
         #expect(throws: ImageProcessing.Failure.self) {
             try ImageProcessing.process(Data("not an image".utf8))
@@ -132,6 +145,19 @@ nonisolated enum SamplePhoto {
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         try #require(CGImageDestinationFinalize(destination))
         return data as Data
+    }
+
+    /// The RGB of the middle pixel.
+    static func centerPixel(of data: Data) throws -> (red: Int, green: Int, blue: Int) {
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try #require(CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: -image.width / 2, y: -image.height / 2, width: image.width, height: image.height))
+        return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
     }
 
     static func properties(of data: Data) throws -> [CFString: Any] {

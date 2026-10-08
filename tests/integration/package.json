@@ -1,5 +1,5 @@
 {
-  "name": "swapee-integration-tests",
+  "name": "lune-integration-tests",
   "private": true,
   "type": "module",
   "scripts": {

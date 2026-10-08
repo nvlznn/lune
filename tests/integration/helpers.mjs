@@ -27,7 +27,7 @@ export function zoneForHour(hour) {
 }
 
 export function psql(sql) {
-  return execFileSync("docker", ["exec", "-i", "supabase_db_swapee", "psql", "-U", "postgres", "-d", "postgres", "-Atq"], {
+  return execFileSync("docker", ["exec", "-i", "supabase_db_lune", "psql", "-U", "postgres", "-d", "postgres", "-Atq"], {
     input: sql,
     encoding: "utf8",
   }).trim();

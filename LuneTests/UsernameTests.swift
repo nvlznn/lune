@@ -1,5 +1,5 @@
 import Testing
-@testable import Swapee
+@testable import Lune
 
 struct UsernameTests {
     @Test(arguments: [("@Alice.Lune", "alice.lune"), ("bob b", "bobb"), ("café-au_lait", "cafau_lait"), (String(repeating: "a", count: 40), String(repeating: "a", count: 30))])

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Swapee
+@testable import Lune
 
 struct PostgresDateTests {
     @Test func parsesTimestamptzWithMicroseconds() throws {

@@ -1,12 +1,12 @@
 import SwiftUI
 
 @main
-struct SwapeeApp: App {
+struct LuneApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var api = APIClient.shared
     @State private var router = AppRouter.shared
     @State private var photos = PhotoLoader(api: APIClient.shared)
-    @State private var plus = LunePlus.shared
+    @State private var premium = LunePremium.shared
 
     var body: some Scene {
         WindowGroup {
@@ -14,7 +14,7 @@ struct SwapeeApp: App {
                 .environment(api)
                 .environment(router)
                 .environment(photos)
-                .environment(plus)
+                .environment(premium)
                 // Lune is a night app: always dark.
                 .preferredColorScheme(.dark)
         }

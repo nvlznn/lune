@@ -2,14 +2,12 @@
 
 A diary you keep with friends, open only at night. One page a day — a photo and a few words — and you read your friends' pages after writing your own.
 
-(The repository, Xcode target and bundle ID `dev.noky.swapee` keep the earlier working name, Swapee.)
-
 ```
-Swapee.xcodeproj        iOS app (iOS 17+, SwiftUI, no third-party dependencies)
-Swapee/                 app sources (folders sync into the project automatically)
-SwapeeTests/            Swift Testing: image processing, decoding, end-to-end client test
+Lune.xcodeproj          iOS app (iOS 17+, SwiftUI, no third-party dependencies)
+Lune/                   app sources (folders sync into the project automatically)
+LuneTests/              Swift Testing: image processing, decoding, end-to-end client test
 Config/                 xcconfigs (backend URL/key), Info.plist, entitlements
-Lune.storekit           local StoreKit config for Lune+ (used by the Swapee scheme)
+Lune.storekit           local StoreKit config for Lune Premium (used by the Lune scheme)
 design/app-icon/        pixel-ghost icon (black background, no ground shadow) and its generator; same pixel map as GhostView
 supabase/
 ├── migrations/         schema + RLS, storage, RPCs, push
@@ -26,7 +24,7 @@ tests/integration/      Node tests against the real Supabase API (storage, clean
 - **Open at night**: writing and reading friends' pages work 20:00–04:00 local time; the whole night belongs to that day. Your own diary, friends and settings work all day.
 - **Send, then see**: you read a friend's page for a day only after writing yours for that day.
 - **Friends' pages are fleeting**: they're readable tonight and tomorrow night only. You can backfill yesterday tonight, which unlocks friends' yesterday pages.
-- **Your diary is permanent**: free users see their own last 30 days in the app; **Lune+** (US$0.99/month or US$7.99/year) shows the whole diary. Nothing is deleted for not paying, and export (a zip of photos + Markdown) is always free.
+- **Your diary is permanent**: free users see their own last 30 days in the app; **Lune Premium** (US$0.99/month or US$7.99/year) shows the whole diary. Nothing is deleted for not paying, and export (a zip of photos + Markdown) is always free.
 - **Profiles**: at first sign-in you add a photo (optional), a name and a username; all three can be changed later in Account. Usernames follow Instagram's rules — 1–30 of a–z, 0–9, `.` and `_`, no leading, trailing or doubled period — and are unique regardless of case. Sign in with Apple doesn't share a photo, so without one the app shows your initials.
 - **Friends**: mutual, up to 1,000. Type a friend's exact username, check who it is, and send a request they accept (or become friends at once if they already asked you). There's no browsing or partial search. Blocking also ends the friendship and hides you from their lookups.
 - **Avatars**: square 512 px JPEGs without metadata in the `avatars` bucket at `{user_id}/{uuid}.jpg`. Paths are random and only handed out to friends, people with a request between you, and someone who looked up your username. Replaced avatars are deleted by cleanup.
@@ -56,7 +54,7 @@ Tests put each test user in an `Etc/GMT±N` zone where it's currently 22:00 (ope
 2. Secrets and functions:
    ```sh
    supabase secrets set CLEANUP_SECRET=<random> NOTIFY_SECRET=<random> \
-     APNS_KEY_ID=<key id> APNS_TEAM_ID=<team id> APNS_BUNDLE_ID=dev.noky.swapee \
+     APNS_KEY_ID=<key id> APNS_TEAM_ID=<team id> APNS_BUNDLE_ID=dev.noky.lune \
      APNS_ENVIRONMENT=production APNS_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"
    supabase functions deploy cleanup
    supabase functions deploy notify
@@ -75,14 +73,14 @@ Tests put each test user in an `Etc/GMT±N` zone where it's currently 22:00 (ope
      )
    $$);
    ```
-4. Auth → Providers → Apple: enable it and add `dev.noky.swapee` as a client ID.
-5. App Store Connect: create the auto-renewable subscriptions `dev.noky.swapee.plus.monthly` and `dev.noky.swapee.plus.yearly` in one group ("Lune+").
+4. Auth → Providers → Apple: enable it and add `dev.noky.lune` as a client ID.
+5. App Store Connect: create the auto-renewable subscriptions `dev.noky.lune.premium.monthly` and `dev.noky.lune.premium.yearly` in one group ("Lune Premium").
 
 ## iOS app
 
-Open `Swapee.xcodeproj`. Debug builds talk to local Supabase (`127.0.0.1:54321` in the simulator; on a device, set `DEV_SERVER_HOST` in `Config/Local.xcconfig`) and show a **Developer Sign-In** button. Release builds read the URL and publishable key from `Config/Release.xcconfig`. Running the Swapee scheme uses `Lune.storekit`, so Lune+ can be bought in the simulator without App Store Connect.
+Open `Lune.xcodeproj`. Debug builds talk to local Supabase (`127.0.0.1:54321` in the simulator; on a device, set `DEV_SERVER_HOST` in `Config/Local.xcconfig`) and show a **Developer Sign-In** button. Release builds read the URL and publishable key from `Config/Release.xcconfig`. Running the Lune scheme uses `Lune.storekit`, so Lune Premium can be bought in the simulator without App Store Connect.
 
 ```sh
-xcodebuild test -project Swapee.xcodeproj -scheme Swapee \
+xcodebuild test -project Lune.xcodeproj -scheme Lune \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro'   # end-to-end test needs local Supabase running
 ```

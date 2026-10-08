@@ -380,7 +380,7 @@ protocol SessionStore {
 struct KeychainSessionStore: SessionStore {
     private let query: [CFString: Any] = [
         kSecClass: kSecClassGenericPassword,
-        kSecAttrService: "dev.noky.swapee.session",
+        kSecAttrService: "dev.noky.lune.session",
         kSecAttrAccount: "default",
     ]
 
