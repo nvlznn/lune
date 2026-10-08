@@ -1,17 +1,23 @@
 import SwiftUI
 
-/// One of your own pages: the photo, the text, and who has seen it. The text can be edited at night.
+/// One of your own pages: the photo, the text, and who it went to. A page you haven't sent can be
+/// edited or deleted any time; today's page can be sent to more friends until the day ends.
 struct EntryDetailView: View {
-    let canEdit: Bool
-
     @Environment(APIClient.self) private var api
+    @Environment(\.dismiss) private var dismiss
     @State private var entry: Entry
     @State private var editing = false
+    @State private var sending = false
+    @State private var confirmDelete = false
+    @State private var error: Error?
 
-    init(entry: Entry, canEdit: Bool) {
-        self.canEdit = canEdit
+    init(entry: Entry) {
         _entry = State(initialValue: entry)
     }
+
+    private var recipients: [Person] { entry.recipients ?? [] }
+    /// The server has the final say; this only hides the option once the day is over.
+    private var canSend: Bool { entry.day == LuneDay.today }
 
     var body: some View {
         List {
@@ -27,109 +33,144 @@ struct EntryDetailView: View {
                 Text(footer)
             }
 
-            if let seenBy = entry.seenBy {
-                Section {
-                    if seenBy.isEmpty {
-                        Text("No one has seen it yet.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(seenBy) { viewer in
-                        LabeledContent {
-                            Text(PhotoTime.standalone(viewer.seenAt))
-                        } label: {
-                            HStack(spacing: 12) {
-                                AvatarView(name: viewer.name, path: viewer.avatarPath, size: 32)
-                                Text(viewer.name)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Seen By")
-                } footer: {
-                    Text("Friends see your page after writing theirs, tonight and tomorrow night.")
+            Section {
+                if recipients.isEmpty {
+                    Label("Only you can see this page.", systemImage: "lock")
+                        .foregroundStyle(.secondary)
                 }
+                ForEach(recipients) { person in
+                    HStack(spacing: 12) {
+                        AvatarView(name: person.name, path: person.avatarPath, size: 32)
+                        PersonLabel(name: person.name, username: person.username)
+                    }
+                }
+                if canSend {
+                    Button(recipients.isEmpty ? "Send…" : "Send to More…", systemImage: "paperplane") { sending = true }
+                }
+            } header: {
+                Text("Sent To")
+            } footer: {
+                Text(entry.isSent
+                    ? "Sent pages can’t be edited or deleted."
+                    : "You can edit or delete this page until you send it.")
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(LuneDay.title(entry.day))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if canEdit {
+            if !entry.isSent {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Edit") { editing = true }
+                    Menu("More", systemImage: "ellipsis.circle") {
+                        Button("Edit", systemImage: "pencil") { editing = true }
+                        Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                    }
                 }
             }
         }
         .sheet(isPresented: $editing) {
-            EditTextSheet(entry: entry) { entry = $0 }
+            ComposeSheet(mode: .edit(entry)) { entry = $0 }
         }
+        .sheet(isPresented: $sending) {
+            SendSheet(entry: entry) { entry = $0 }
+        }
+        .alert("Delete This Page?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) { Task { await delete() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Its photo and words will be gone for good.")
+        }
+        .errorAlert("Something Went Wrong", error: $error)
     }
 
     private var footer: String {
         let time = PhotoTime.caption(takenAt: entry.takenAt, uploadedAt: entry.createdAt)
         return entry.editedAt == nil ? time : "\(time) · Edited"
     }
+
+    private func delete() async {
+        do {
+            try await api.deleteEntry(entry.entryId)
+            NotificationCenter.default.post(name: .luneDidChange, object: nil)
+            dismiss()
+        } catch {
+            self.error = error
+        }
+    }
 }
 
-/// Editing a page's text, like a note in Reminders.
-private struct EditTextSheet: View {
+/// Sending one of today's pages to (more) friends.
+private struct SendSheet: View {
     let entry: Entry
-    let onSaved: (Entry) -> Void
+    let onSent: (Entry) -> Void
 
     @Environment(APIClient.self) private var api
     @Environment(\.dismiss) private var dismiss
-    @State private var text: String
-    @State private var isSaving = false
+    @State private var friends: [Friend] = []
+    @State private var groups: [FriendGroup] = []
+    @State private var selection: Set<UUID> = []
+    @State private var loaded = false
+    @State private var isSending = false
+    @State private var confirm = false
     @State private var error: Error?
 
-    init(entry: Entry, onSaved: @escaping (Entry) -> Void) {
-        self.entry = entry
-        self.onSaved = onSaved
-        _text = State(initialValue: entry.text)
-    }
-
-    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var alreadySent: Set<UUID> { Set((entry.recipients ?? []).map(\.userId)) }
+    /// Friends who don't have it yet, for the summary and question.
+    private var unsent: [Friend] { friends.filter { !alreadySent.contains($0.userId) } }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("How was the day?", text: $text, axis: .vertical)
-                        .lineLimit(4...16)
-                        .onChange(of: text) { _, newValue in
-                            if newValue.count > 500 { text = String(newValue.prefix(500)) }
-                        }
-                } footer: {
-                    Text("\(text.count) / 500").monospacedDigit()
+            Group {
+                if loaded {
+                    RecipientsPicker(friends: friends, groups: groups, alreadySent: alreadySent, selection: $selection)
+                } else {
+                    ProgressView()
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Edit Text")
+            .navigationTitle("Send To")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving {
+                    if isSending {
                         ProgressView()
                     } else {
-                        Button("Done") { Task { await save() } }
-                            .disabled(trimmed.isEmpty || trimmed == entry.text)
+                        Button("Send") { confirm = true }
+                            .disabled(selection.isEmpty)
                     }
                 }
             }
-            .errorAlert("Couldn’t Save", error: $error)
+            .task { await load() }
+            .alert(Audience.question(selection, friends: unsent, groups: groups), isPresented: $confirm) {
+                Button("Send") { Task { await send() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("It arrives right away and can’t be edited or deleted.")
+            }
+            .errorAlert("Couldn’t Send", error: $error)
         }
     }
 
-    private func save() async {
-        isSaving = true
-        defer { isSaving = false }
+    private func load() async {
         do {
-            var updated = try await api.editEntryText(entry.entryId, text: trimmed)
-            updated.seenBy = updated.seenBy ?? entry.seenBy
-            onSaved(updated)
+            async let friends = api.friends()
+            async let groups = api.groups()
+            (self.friends, self.groups) = try await (friends, groups)
+            loaded = true
+        } catch is CancellationError {
+        } catch {
+            self.error = error
+        }
+    }
+
+    private func send() async {
+        isSending = true
+        defer { isSending = false }
+        do {
+            let updated = try await api.addRecipients(entry.entryId, recipients: Array(selection))
+            onSent(updated)
             NotificationCenter.default.post(name: .luneDidChange, object: nil)
             dismiss()
         } catch {

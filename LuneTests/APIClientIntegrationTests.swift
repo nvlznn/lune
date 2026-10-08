@@ -29,27 +29,43 @@ struct APIClientIntegrationTests {
         try await alice.respondToFriendRequest(from: request.userId, accept: true)
         #expect(try await bob.friends().map(\.name) == ["Alice"])
 
-        // Alice writes tonight; Bob sees only that she wrote
+        // Alice keeps a draft to herself, edits it, then sends it to Bob
         let photo = try ImageProcessing.process(try SamplePhoto.make(width: 2000, height: 1500, type: .jpeg))
         var aliceTonight = try await alice.tonight()
         #expect(aliceTonight.open)
-        let today = try #require(aliceTonight.tonight?.day)
-        let page = try await alice.writeEntry(day: today, jpeg: photo.jpeg, takenAt: photo.takenAt, text: "Lunch by the sea.\nSleepy now.")
+        let today = aliceTonight.today
+        var page = try await alice.writeEntry(
+            day: today, jpeg: photo.jpeg, takenAt: photo.takenAt, text: "Lunch by the sea.\nSleepy now.", recipients: []
+        )
         #expect(page.text == "Lunch by the sea.\nSleepy now.")
+        #expect(!page.isSent)
         await #expect(throws: APIError.server(code: "already_written")) {
-            try await alice.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Again")
+            try await alice.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Again", recipients: [])
+        }
+        let firstPath = page.storagePath
+        page = try await alice.updateEntry(page.entryId, text: "Lunch by the sea.", jpeg: photo.jpeg, takenAt: photo.takenAt)
+        #expect(page.editedAt != nil)
+        #expect(page.storagePath != firstPath)
+
+        let bobID = try #require(bob.session?.userID)
+        page = try await alice.addRecipients(page.entryId, recipients: [bobID])
+        #expect(page.isSent)
+        #expect(page.recipients?.map(\.name) == ["Bob"])
+        await #expect(throws: APIError.server(code: "already_sent")) {
+            try await alice.updateEntry(page.entryId, text: "Too late")
         }
 
+        // Bob sees a locked letter until he writes his own page (kept to himself)
         var bobTonight = try await bob.tonight()
-        #expect(bobTonight.tonight?.friends.isEmpty == true)
-        #expect(bobTonight.tonight?.lockedWriters == ["Alice"])
-
-        // Bob writes, then reads Alice's page
-        _ = try await bob.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Rainy.")
+        #expect(bobTonight.letters.isEmpty)
+        #expect(bobTonight.locked.map(\.username) == [aliceUsername])
+        _ = try await bob.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Rainy.", recipients: [])
         bobTonight = try await bob.tonight()
-        let fromAlice = try #require(bobTonight.tonight?.friends.first)
+        let fromAlice = try #require(bobTonight.letters.first)
         #expect(fromAlice.name == "Alice")
+        #expect(fromAlice.username == aliceUsername)
         #expect(fromAlice.avatarPath == avatarPath)
+        #expect(fromAlice.recipients == nil)
         #expect(try await bob.downloadImage(at: avatarPath, in: .avatars) == avatar)
         let takenAt = try #require(fromAlice.takenAt)
         #expect(Calendar.current.dateComponents([.hour, .minute], from: takenAt) == DateComponents(hour: 21, minute: 14))
@@ -57,27 +73,21 @@ struct APIClientIntegrationTests {
         #expect(downloaded == photo.jpeg)
         #expect(!ImageProcessing.containsPersonalMetadata(downloaded))
 
-        // Alice sees Bob saw it, and can edit her text
-        aliceTonight = try await alice.tonight()
-        #expect(aliceTonight.tonight?.mine?.seenBy?.map(\.name) == ["Bob"])
-        let edited = try await alice.editEntryText(page.entryId, text: "Lunch by the sea.")
-        #expect(edited.editedAt != nil)
+        // Groups
+        let group = try await alice.saveGroup(id: nil, name: "Close", memberIDs: [bobID])
+        #expect(try await alice.groups() == [group])
+        try await alice.deleteGroup(group.id)
+        #expect(try await alice.groups().isEmpty)
 
-        // Backfilling yesterday
-        let yesterday = try #require(aliceTonight.lastNight?.day)
-        _ = try await alice.writeEntry(day: yesterday, jpeg: photo.jpeg, takenAt: nil, text: "Written late.")
-        #expect(try await alice.myEntries().map(\.day) == [today, yesterday])
-        #expect(try await alice.exportEntries().count == 2)
+        // Diary and export
+        #expect(try await alice.myEntries().map(\.day) == [today])
+        #expect(try await alice.exportEntries().count == 1)
 
-        // Closed during the day
+        // During the day writing is closed (reading during the day is covered by pgTAP)
         try await alice.setTimeZone(LocalSupabase.zone(forLocalHour: 12))
         aliceTonight = try await alice.tonight()
         #expect(!aliceTonight.open)
         #expect(aliceTonight.opensAt != nil)
-        #expect(aliceTonight.tonight?.friends.isEmpty == true)
-        await #expect(throws: APIError.server(code: "closed")) {
-            try await alice.editEntryText(page.entryId, text: "Daytime edit")
-        }
 
         // Report, block, delete
         try await bob.report(entryID: fromAlice.entryId, reason: "Spam")

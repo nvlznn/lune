@@ -27,31 +27,55 @@ struct PostgresDateTests {
 
 struct ResponseDecodingTests {
     @Test func decodesTonight() throws {
-        let page = { (name: String, day: String, seen: String) in """
+        let page = { (name: String, extra: String) in """
             {"entry_id": "\(UUID().uuidString)", "user_id": "1b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "\(name)",
-             "day": "\(day)", "storage_path": "u/p.jpg", "text": "Long day.\\nGood dinner.", "taken_at": "2026-10-06T21:14:00",
-             "created_at": "2026-10-07T13:12:45.123456+00:00", "edited_at": null, "seen_by": \(seen)}
+             "username": "\(name.lowercased())", "avatar_path": null, "day": "2026-10-07", "storage_path": "u/p.jpg",
+             "text": "Long day.\\nGood dinner.", "taken_at": "2026-10-06T21:14:00",
+             "created_at": "2026-10-07T13:12:45.123456+00:00", "edited_at": null, \(extra)}
             """ }
         let json = """
         {
-          "open": true, "today": "2026-10-07", "opens_at": null, "closes_at": "2026-10-07T20:00:00+00:00",
-          "days": [
-            {"day": "2026-10-07",
-             "mine": \(page("Me", "2026-10-07", #"[{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "seen_at": "2026-10-07T13:20:00+00:00"}]"#)),
-             "friends": [\(page("Amy", "2026-10-07", "null"))],
-             "writers": ["Amy", "Ben"]},
-            {"day": "2026-10-06", "mine": null, "friends": [], "writers": ["Cara"]}
-          ]
+          "today": "2026-10-07", "open": true, "opens_at": null, "closes_at": "2026-10-07T20:00:00+00:00",
+          "ends_at": "2026-10-08T12:00:00+00:00",
+          "mine": \(page("Me", #""sent_at": "2026-10-07T13:12:45+00:00", "recipients": [{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "username": "amy", "avatar_path": null}]"#)),
+          "letters": [\(page("Amy", #""sent_at": "2026-10-07T13:00:00+00:00", "recipients": null"#))],
+          "locked": []
         }
         """
         let state = try JSONDecoder.supabase.decode(TonightState.self, from: Data(json.utf8))
         #expect(state.open)
-        #expect(state.tonight?.mine?.seenSummary == "Seen by Amy")
-        #expect(state.tonight?.mine?.text == "Long day.\nGood dinner.")
-        #expect(state.tonight?.friends.first?.seenBy == nil)
-        #expect(state.tonight?.lockedWriters == ["Ben"])
-        #expect(state.lastNight?.lockedWriters == ["Cara"])
+        #expect(state.mine?.isSent == true)
+        #expect(state.mine?.audienceSummary == "Sent to Amy")
+        #expect(state.mine?.text == "Long day.\nGood dinner.")
+        #expect(state.letters.first?.username == "amy")
+        #expect(state.letters.first?.recipients == nil)
         #expect(state.closesAt != nil)
+    }
+
+    @Test func decodesLockedLetters() throws {
+        let json = """
+        {"today": "2026-10-07", "open": false, "opens_at": "2026-10-08T12:00:00+00:00", "closes_at": null,
+         "ends_at": "2026-10-08T12:00:00+00:00", "mine": null, "letters": [],
+         "locked": [{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "username": "amy",
+                     "avatar_path": null, "sent_at": "2026-10-07T13:00:00+00:00"}]}
+        """
+        let state = try JSONDecoder.supabase.decode(TonightState.self, from: Data(json.utf8))
+        #expect(state.locked.map(\.username) == ["amy"])
+        #expect(state.mine == nil)
+    }
+
+    @Test func summarizesAudiences() {
+        let friends = ["Amy", "Ben", "Cara", "Dan"].map {
+            Friend(userId: UUID(), name: $0, username: nil, avatarPath: nil, since: .now)
+        }
+        let close = FriendGroup(id: UUID(), name: "Close", memberIds: [friends[0].userId, friends[1].userId])
+        let all = Set(friends.map(\.userId))
+        #expect(Audience.summary(all, friends: friends, groups: [close]) == "All Friends (4)")
+        #expect(Audience.summary([], friends: friends, groups: [close]) == "Only Me")
+        #expect(Audience.summary(Set(close.memberIds), friends: friends, groups: [close]) == "Close")
+        #expect(Audience.summary([friends[2].userId], friends: friends, groups: [close]) == "Cara")
+        #expect(Audience.question(all, friends: friends, groups: []) == "Send to All 4 Friends?")
+        #expect(Audience.names(["A", "B", "C", "D", "E"]) == "A, B and 3 others")
     }
 
     @Test func decodesFriendResults() throws {

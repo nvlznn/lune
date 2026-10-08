@@ -203,87 +203,98 @@ struct AvatarCropView: View {
     @State private var offset: CGSize = .zero
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var drag: CGSize = .zero
+    /// The circle's size on screen, kept for cropping when Choose is tapped.
+    @State private var cropSide: CGFloat = 0
     @State private var error: Error?
 
     private static let maxScale: CGFloat = 6
 
     var body: some View {
-        GeometryReader { geometry in
-            let side = min(geometry.size.width, geometry.size.height) - 32
-            // At scale 1 the image just covers the circle.
-            let base = side / min(image.size.width, image.size.height)
-            let liveScale = min(max(scale * pinch, 1), Self.maxScale)
-            let liveOffset = clamped(offset + drag, scale: liveScale, base: base, side: side)
+        ZStack {
+            // The whole screen is the crop area, so the photo, the dimming and the circle share one center.
+            GeometryReader { geometry in
+                let side = min(geometry.size.width, geometry.size.height) - 32
+                // At scale 1 the image just covers the circle.
+                let base = side / min(image.size.width, image.size.height)
+                let liveScale = min(max(scale * pinch, 1), Self.maxScale)
+                let liveOffset = clamped(offset + drag, scale: liveScale, base: base, side: side)
 
-            ZStack {
-                Color.black.ignoresSafeArea()
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: image.size.width * base * liveScale, height: image.size.height * base * liveScale)
-                    .offset(liveOffset)
-                    .accessibilityLabel("Photo to crop")
-                // Dim everything outside the circle.
-                Rectangle()
-                    .fill(.black.opacity(0.6))
-                    .reverseMask { Circle().frame(width: side, height: side) }
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                Circle()
-                    .stroke(.white.opacity(0.7), lineWidth: 1)
-                    .frame(width: side, height: side)
-                    .allowsHitTesting(false)
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .contentShape(Rectangle())
-            .gesture(
-                SimultaneousGesture(
-                    MagnifyGesture()
-                        .updating($pinch) { value, state, _ in state = value.magnification }
-                        .onEnded { value in
-                            scale = min(max(scale * value.magnification, 1), Self.maxScale)
-                            offset = clamped(offset, scale: scale, base: base, side: side)
-                        },
-                    DragGesture()
-                        .updating($drag) { value, state, _ in state = value.translation }
-                        .onEnded { value in
-                            offset = clamped(offset + value.translation, scale: scale, base: base, side: side)
-                        }
-                )
-            )
-            .onTapGesture(count: 2) {
-                withAnimation(.snappy) {
-                    scale = 1
-                    offset = .zero
+                ZStack {
+                    Color.black
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: image.size.width * base * liveScale, height: image.size.height * base * liveScale)
+                        .offset(liveOffset)
+                        .accessibilityLabel("Photo to crop")
+                    // Dim everything outside the circle.
+                    Rectangle()
+                        .fill(.black.opacity(0.6))
+                        .reverseMask { Circle().frame(width: side, height: side) }
+                        .allowsHitTesting(false)
+                    Circle()
+                        .stroke(.white.opacity(0.7), lineWidth: 1)
+                        .frame(width: side, height: side)
+                        .allowsHitTesting(false)
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    SimultaneousGesture(
+                        MagnifyGesture()
+                            .updating($pinch) { value, state, _ in state = value.magnification }
+                            .onEnded { value in
+                                scale = min(max(scale * value.magnification, 1), Self.maxScale)
+                                offset = clamped(offset, scale: scale, base: base, side: side)
+                            },
+                        DragGesture()
+                            .updating($drag) { value, state, _ in state = value.translation }
+                            .onEnded { value in
+                                offset = clamped(offset + value.translation, scale: scale, base: base, side: side)
+                            }
+                    )
+                )
+                .onTapGesture(count: 2) {
+                    withAnimation(.snappy) {
+                        scale = 1
+                        offset = .zero
+                    }
+                }
+                .onAppear { cropSide = side }
+                .onChange(of: side) { _, newValue in cropSide = newValue }
             }
-            .safeAreaInset(edge: .top) {
+            .ignoresSafeArea()
+
+            // Title and buttons stay clear of the status bar and home indicator.
+            VStack {
                 Text("Move and Scale")
                     .font(.headline)
-                    .foregroundStyle(.white)
                     .padding(.top, 8)
-            }
-            .safeAreaInset(edge: .bottom) {
+                Spacer()
                 HStack {
                     Button("Cancel") { dismiss() }
                     Spacer()
-                    Button("Choose") {
-                        do {
-                            onChoose(try ImageProcessing.avatar(from: image, crop: crop(scale: scale, offset: offset, base: base, side: side)))
-                            dismiss()
-                        } catch {
-                            self.error = PhotoError.unreadable
-                        }
-                    }
-                    .fontWeight(.semibold)
+                    Button("Choose", action: choose)
+                        .fontWeight(.semibold)
                 }
                 .font(.body)
-                .foregroundStyle(.white)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 8)
             }
+            .foregroundStyle(.white)
         }
         .preferredColorScheme(.dark)
         .errorAlert("Couldn’t Use Photo", error: $error)
+    }
+
+    private func choose() {
+        guard cropSide > 0 else { return }
+        let base = cropSide / min(image.size.width, image.size.height)
+        do {
+            onChoose(try ImageProcessing.avatar(from: image, crop: crop(scale: scale, offset: offset, base: base, side: cropSide)))
+            dismiss()
+        } catch {
+            self.error = PhotoError.unreadable
+        }
     }
 
     /// Keeps the circle covered by the image.

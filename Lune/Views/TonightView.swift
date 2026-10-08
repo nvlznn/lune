@@ -1,7 +1,8 @@
 import Combine
 import SwiftUI
 
-/// Tonight: your page, friends' pages for tonight and last night. Open 20:00–04:00; asleep otherwise.
+/// Tonight: your page and the letters friends sent you for today. Pages are written 20:00–04:00;
+/// letters can be read until the day ends at 20:00.
 struct TonightView: View {
     @Environment(APIClient.self) private var api
     @Environment(\.scenePhase) private var scenePhase
@@ -12,29 +13,22 @@ struct TonightView: View {
     @State private var showAccount = false
     @State private var sentCount = 0
 
-    /// Which day the compose sheet writes.
-    struct ComposeTarget: Identifiable {
-        let day: String
-        let isYesterday: Bool
-        var id: String { day }
-    }
-
     var body: some View {
         NavigationStack {
             Group {
                 if let state {
-                    if state.open {
-                        OpenList(state: state, compose: { composing = $0 }, refresh: { await refresh() })
-                    } else {
-                        ClosedList(state: state)
-                    }
+                    TonightList(state: state) { composing = ComposeTarget(day: state.today) }
                 } else {
                     ProgressView()
                 }
             }
             .navigationTitle("Tonight")
             .navigationDestination(for: Entry.self) { entry in
-                EntryDetailView(entry: entry, canEdit: state?.open ?? false)
+                if entry.userId == api.session?.userID {
+                    EntryDetailView(entry: entry)
+                } else {
+                    LetterView(entry: entry)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -49,14 +43,14 @@ struct TonightView: View {
             .onReceive(NotificationCenter.default.publisher(for: .luneDidChange)) { _ in
                 Task { await refresh() }
             }
-            // Wake up (or fall asleep) on time while the screen is open.
+            // Open, close, and start a new day on time while the screen is open.
             .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now in
                 guard let state else { return }
-                if let opensAt = state.opensAt, now >= opensAt { Task { await refresh() } }
-                if let closesAt = state.closesAt, now >= closesAt { Task { await refresh() } }
+                let changes = [state.opensAt, state.closesAt, state.endsAt].compactMap(\.self)
+                if changes.contains(where: { now >= $0 }) { Task { await refresh() } }
             }
             .sheet(item: $composing) { target in
-                ComposeSheet(day: target.day, isYesterday: target.isYesterday) {
+                ComposeSheet(mode: .new(day: target.day)) { _ in
                     sentCount += 1
                     Task { await refresh() }
                 }
@@ -78,91 +72,99 @@ struct TonightView: View {
     }
 }
 
-// MARK: - Open
+/// The day the compose sheet writes.
+private struct ComposeTarget: Identifiable {
+    let day: String
+    var id: String { day }
+}
 
-private struct OpenList: View {
+private struct TonightList: View {
     let state: TonightState
-    let compose: (TonightView.ComposeTarget) -> Void
-    let refresh: () async -> Void
+    let write: () -> Void
 
     var body: some View {
         List {
-            if let tonight = state.tonight {
-                Section {
-                    if let mine = tonight.mine {
-                        NavigationLink(value: mine) { MyPageRow(entry: mine) }
-                    } else {
-                        ContentUnavailableView {
-                            Label {
-                                Text("Tonight’s Page")
-                            } icon: {
-                                GhostView(mood: .awake).frame(width: 64)
-                            }
-                        } description: {
-                            Text("One photo and a few words about your day.")
-                        } actions: {
-                            Button("Write Tonight’s Page") {
-                                compose(.init(day: tonight.day, isYesterday: false))
-                            }
-                            .buttonStyle(.borderedProminent)
+            Section {
+                if let mine = state.mine {
+                    NavigationLink(value: mine) { MyPageRow(entry: mine) }
+                } else if state.open {
+                    ContentUnavailableView {
+                        Label {
+                            Text("Tonight’s Page")
+                        } icon: {
+                            GhostView(mood: .awake).frame(width: 64)
                         }
+                    } description: {
+                        Text("One photo and a few words about your day.")
+                    } actions: {
+                        Button("Write Tonight’s Page", action: write)
+                            .buttonStyle(.borderedProminent)
                     }
-                } header: {
-                    Text(LuneDay.title(tonight.day))
+                } else {
+                    Asleep(opensAt: state.opensAt)
                 }
+            } header: {
+                Text(LuneDay.title(state.today))
             }
 
-            if let lastNight = state.lastNight, lastNight.mine == nil {
+            if !state.letters.isEmpty || !state.locked.isEmpty {
                 Section {
-                    Button("Write Yesterday’s Page") {
-                        compose(.init(day: lastNight.day, isYesterday: true))
-                    }
+                    LetterShelf(letters: state.letters, locked: state.locked, canWrite: state.open, write: write)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: {
+                    Text("Letters")
                 } footer: {
-                    Text("Missed last night? You can still write it tonight.")
+                    Text("Today’s letters disappear \(Self.ending(state.endsAt)).")
                 }
-            }
-
-            if let tonight = state.tonight {
-                FriendsSection(title: "Friends Tonight", day: tonight, refresh: refresh)
-            }
-            if let lastNight = state.lastNight {
-                FriendsSection(title: "Last Night", day: lastNight, refresh: refresh)
             }
         }
         .listStyle(.insetGrouped)
     }
-}
 
-/// Friends' pages for a day; pages you can't read yet show who wrote them.
-private struct FriendsSection: View {
-    let title: String
-    let day: TonightState.DayState
-    let refresh: () async -> Void
-
-    var body: some View {
-        if !day.friends.isEmpty || !day.lockedWriters.isEmpty {
-            Section(title) {
-                ForEach(day.friends) { entry in
-                    PageRow(entry: entry) { Task { await refresh() } }
-                }
-                if !day.lockedWriters.isEmpty {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(day.lockedWriters.formatted(.list(type: .and))) wrote")
-                            Text("Write your page to read theirs.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "lock.fill").foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
+    /// "at 8:00 PM" or "tomorrow at 8:00 PM".
+    static func ending(_ date: Date) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        return Calendar.current.isDateInToday(date) ? "at \(time)" : "tomorrow at \(time)"
     }
 }
 
-/// Your own page in the list: thumbnail, first lines, who has seen it.
+/// Writing is closed: the sleeping ghost and when it opens.
+private struct Asleep: View {
+    let opensAt: Date?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            GhostView(mood: .asleep)
+                .frame(width: 120)
+                .padding(.top, 24)
+            Text("Lune Is Asleep")
+                .font(.title2.bold())
+            if let opensAt {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    Text(Self.opening(opensAt, now: context.date))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 24)
+        .listRowBackground(Color.clear)
+    }
+
+    /// "Opens at 8:00 PM · in 6 hr, 12 min".
+    static func opening(_ opensAt: Date, now: Date) -> String {
+        let time = opensAt.formatted(date: .omitted, time: .shortened)
+        let seconds = max(0, opensAt.timeIntervalSince(now))
+        guard seconds >= 60 else { return "Opens at \(time)" }
+        let remaining = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        return "Opens at \(time) · in \(remaining)"
+    }
+}
+
+/// Your own page in a list: thumbnail, first lines, who it went to.
 struct MyPageRow: View {
     let entry: Entry
 
@@ -174,7 +176,7 @@ struct MyPageRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.text)
                     .lineLimit(2)
-                Text(entry.seenSummary)
+                Text("\(Image(systemName: entry.isSent ? "paperplane" : "lock")) \(entry.audienceSummary)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -184,68 +186,9 @@ struct MyPageRow: View {
 }
 
 extension Entry {
-    /// "Seen by Bob and Carol", "Seen by 5 friends", or "Not seen yet".
-    var seenSummary: String {
-        let viewers = seenBy ?? []
-        switch viewers.count {
-        case 0: return "Not seen yet"
-        case 1...3: return "Seen by \(viewers.map(\.name).formatted(.list(type: .and)))"
-        default: return "Seen by \(viewers.count) friends"
-        }
-    }
-}
-
-// MARK: - Closed
-
-private struct ClosedList: View {
-    let state: TonightState
-
-    var body: some View {
-        List {
-            Section {
-                VStack(spacing: 16) {
-                    GhostView(mood: .asleep)
-                        .frame(width: 120)
-                        .padding(.top, 24)
-                    Text("Lune Is Asleep")
-                        .font(.title2.bold())
-                    if let opensAt = state.opensAt {
-                        TimelineView(.periodic(from: .now, by: 60)) { context in
-                            Text(Self.opening(opensAt, now: context.date))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    if let writers = state.lastNight?.writers, !writers.isEmpty {
-                        Text("Last night, \(writers.formatted(.list(type: .and))) wrote.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 24)
-                .listRowBackground(Color.clear)
-            }
-
-            let mine = state.days.compactMap(\.mine)
-            if !mine.isEmpty {
-                Section("Your Pages") {
-                    ForEach(mine) { entry in
-                        NavigationLink(value: entry) { MyPageRow(entry: entry) }
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-    }
-
-    /// "Opens at 8:00 PM · in 6 hr, 12 min".
-    static func opening(_ opensAt: Date, now: Date) -> String {
-        let time = opensAt.formatted(date: .omitted, time: .shortened)
-        let seconds = max(0, opensAt.timeIntervalSince(now))
-        guard seconds >= 60 else { return "Opens at \(time)" }
-        let remaining = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
-        return "Opens at \(time) · in \(remaining)"
+    /// "Sent to Alice and Bob", "Sent to Alice, Bob and 3 others", or "Only you".
+    var audienceSummary: String {
+        let names = (recipients ?? []).map(\.name)
+        return names.isEmpty ? "Only you" : "Sent to \(Audience.names(names))"
     }
 }

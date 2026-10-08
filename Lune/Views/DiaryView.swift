@@ -13,8 +13,8 @@ struct DiaryView: View {
     @State private var exportURL: URL?
     @State private var error: Error?
 
-    /// Today's day key on this device (04:00 rollover), for the 30-day window.
-    private var today: String { LuneDay.key(Date.now.addingTimeInterval(-4 * 3600)) }
+    /// Today's day key on this device, for the 30-day window.
+    private var today: String { LuneDay.today }
 
     private var visible: [Entry] {
         premium.isActive ? entries : entries.filter { LuneDay.daysBetween($0.day, today) < LunePremium.freeDays }
@@ -74,7 +74,7 @@ struct DiaryView: View {
             }
             .navigationTitle("Diary")
             .navigationDestination(for: Entry.self) { entry in
-                EntryDetailView(entry: entry, canEdit: false)
+                EntryDetailView(entry: entry)
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

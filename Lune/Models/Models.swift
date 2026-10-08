@@ -11,13 +11,14 @@ struct Profile: Codable, Equatable {
     var termsAcceptedAt: Date?
 }
 
-/// One page: a photo and the day's text.
+/// One page: a photo and the day's text. Sent to anyone, it's a letter and can't change.
 struct Entry: Codable, Identifiable, Hashable {
     let entryId: UUID
     let userId: UUID
     let name: String
+    let username: String?
     let avatarPath: String?
-    /// The writer's day, `yyyy-MM-dd` (days roll over at 04:00 local time).
+    /// The writer's day, `yyyy-MM-dd` (days start at 20:00 local time).
     let day: String
     let storagePath: String
     var text: String
@@ -25,49 +26,56 @@ struct Entry: Codable, Identifiable, Hashable {
     let takenAt: Date?
     let createdAt: Date
     var editedAt: Date?
-    /// Only for your own pages: who has seen it, earliest first.
-    var seenBy: [Viewer]?
+    /// When it was first sent to someone; nil while it's only for its writer.
+    var sentAt: Date?
+    /// Only for your own pages: who it was sent to.
+    var recipients: [Person]?
 
     var id: UUID { entryId }
+    var isSent: Bool { sentAt != nil }
+}
 
-    struct Viewer: Codable, Hashable, Identifiable {
+/// Someone shown with their photo and username.
+struct Person: Codable, Hashable, Identifiable {
+    let userId: UUID
+    let name: String
+    let username: String?
+    let avatarPath: String?
+    var id: UUID { userId }
+}
+
+/// Your current day (`tonight` RPC): your page and the letters friends sent you.
+struct TonightState: Codable, Equatable {
+    var today: String
+    /// Whether pages can be written now (20:00–04:00).
+    var open: Bool
+    /// When closed: when writing opens (20:00).
+    var opensAt: Date?
+    /// When open: when writing closes (04:00).
+    var closesAt: Date?
+    /// When today's letters disappear and a new day starts (20:00 tomorrow).
+    var endsAt: Date
+    var mine: Entry?
+    /// Letters you can read, newest first (only once you've written today's page).
+    var letters: [Entry]
+    /// Letters waiting for you to write today's page, newest first.
+    var locked: [LockedLetter]
+
+    struct LockedLetter: Codable, Equatable, Identifiable {
         let userId: UUID
         let name: String
+        let username: String?
         let avatarPath: String?
-        let seenAt: Date
+        let sentAt: Date
         var id: UUID { userId }
     }
 }
 
-/// Today and yesterday as you see them right now (`tonight` RPC).
-struct TonightState: Codable, Equatable {
-    var open: Bool
-    var today: String
-    /// When closed: when the diary opens tonight.
-    var opensAt: Date?
-    /// When open: when it closes (04:00).
-    var closesAt: Date?
-    /// Today first, then yesterday.
-    var days: [DayState]
-
-    struct DayState: Codable, Equatable, Identifiable {
-        var day: String
-        var mine: Entry?
-        /// Friends' pages you can see (only while open, and only if you wrote this day).
-        var friends: [Entry]
-        /// Friends who wrote this day, earliest first, whether or not you can see their pages.
-        var writers: [String]
-
-        var id: String { day }
-        /// Names of friends whose pages are still hidden from you.
-        var lockedWriters: [String] {
-            let visible = Set(friends.map(\.name))
-            return writers.filter { !visible.contains($0) }
-        }
-    }
-
-    var tonight: DayState? { days.first }
-    var lastNight: DayState? { days.count > 1 ? days[1] : nil }
+/// One of your own lists of friends, for sending to several at once.
+struct FriendGroup: Codable, Identifiable, Hashable {
+    let id: UUID
+    var name: String
+    var memberIds: [UUID]
 }
 
 struct Friend: Codable, Identifiable, Hashable {

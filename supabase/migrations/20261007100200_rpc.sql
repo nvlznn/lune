@@ -126,6 +126,7 @@ as $$
     'entry_id', e.id,
     'user_id', e.user_id,
     'name', p.display_name,
+    'username', p.username,
     'avatar_path', p.avatar_path,
     'day', e.day,
     'storage_path', e.storage_path,
@@ -135,7 +136,7 @@ as $$
     'edited_at', e.edited_at,
     'sent_at', e.sent_at,
     'recipients', case when e.user_id = p_viewer then coalesce((
-      select jsonb_agg(jsonb_build_object('user_id', r.user_id, 'name', rp.display_name, 'avatar_path', rp.avatar_path)
+      select jsonb_agg(jsonb_build_object('user_id', r.user_id, 'name', rp.display_name, 'username', rp.username, 'avatar_path', rp.avatar_path)
                        order by lower(rp.display_name))
       from public.entry_recipients r
       join public.profiles rp on rp.id = r.user_id
@@ -389,7 +390,7 @@ begin
       where r.user_id = uid and private.is_letter_to(e.id, uid)
     ), '[]'::jsonb) else '[]'::jsonb end,
     'locked', case when written then '[]'::jsonb else coalesce((
-      select jsonb_agg(jsonb_build_object('user_id', p.id, 'name', p.display_name, 'avatar_path', p.avatar_path, 'sent_at', r.sent_at)
+      select jsonb_agg(jsonb_build_object('user_id', p.id, 'name', p.display_name, 'username', p.username, 'avatar_path', p.avatar_path, 'sent_at', r.sent_at)
                        order by r.sent_at desc, e.id)
       from public.entry_recipients r
       join public.entries e on e.id = r.entry_id

@@ -149,8 +149,39 @@ final class APIClient {
         try await rpc("tonight")
     }
 
-    /// Uploads the photo, then writes the page for `day` (today or yesterday).
-    func writeEntry(day: String, jpeg: Data, takenAt: String?, text: String) async throws -> Entry {
+    /// Uploads the photo, then writes tonight's page and sends it to `recipients` (empty: only for you).
+    func writeEntry(day: String, jpeg: Data, takenAt: String?, text: String, recipients: [UUID]) async throws -> Entry {
+        let path = try await uploadPhoto(jpeg)
+        var args: [String: Any] = [
+            "p_day": day, "p_storage_path": path, "p_text": text,
+            "p_recipients": recipients.map(\.lowercased),
+        ]
+        args["p_taken_at"] = takenAt ?? NSNull()
+        return try await rpc("write_entry", args)
+    }
+
+    /// Changes a page you haven't sent: its text, and its photo when `jpeg` is given.
+    func updateEntry(_ entryID: UUID, text: String, jpeg: Data? = nil, takenAt: String? = nil) async throws -> Entry {
+        var args: [String: Any] = ["p_entry_id": entryID.lowercased, "p_text": text]
+        if let jpeg {
+            args["p_storage_path"] = try await uploadPhoto(jpeg)
+            args["p_taken_at"] = takenAt ?? NSNull()
+        }
+        return try await rpc("update_entry", args)
+    }
+
+    /// Deletes a page you haven't sent.
+    func deleteEntry(_ entryID: UUID) async throws {
+        try await rpc("delete_entry", ["p_entry_id": entryID.lowercased])
+    }
+
+    /// Sends one of today's pages to more friends. After this it can't be edited.
+    func addRecipients(_ entryID: UUID, recipients: [UUID]) async throws -> Entry {
+        try await rpc("add_recipients", ["p_entry_id": entryID.lowercased, "p_recipients": recipients.map(\.lowercased)])
+    }
+
+    /// Uploads a page photo to your folder and returns its path.
+    private func uploadPhoto(_ jpeg: Data) async throws -> String {
         guard let userID = session?.userID else { throw APIError.notSignedIn }
         let path = "\(userID.lowercased)/\(UUID().lowercased).jpg"
 
@@ -162,17 +193,10 @@ final class APIClient {
         do {
             try await sendDiscardingBody(authorized(request))
         } catch APIError.http(_, let message) where message.contains("row-level security") {
-            // Storage only takes photos while your diary is open and you still have a day to write.
+            // Storage only takes photos while you can write tonight's page or have an unsent page.
             throw APIError.server(code: "upload_rejected")
         }
-
-        var args: [String: Any] = ["p_day": day, "p_storage_path": path, "p_text": text]
-        args["p_taken_at"] = takenAt ?? NSNull()
-        return try await rpc("write_entry", args)
-    }
-
-    func editEntryText(_ entryID: UUID, text: String) async throws -> Entry {
-        try await rpc("edit_entry_text", ["p_entry_id": entryID.lowercased, "p_text": text])
+        return path
     }
 
     /// Your own pages, newest first, before `day` (`yyyy-MM-dd`).
@@ -232,6 +256,23 @@ final class APIClient {
 
     func removeFriend(_ userID: UUID) async throws {
         try await rpc("remove_friend", ["p_user_id": userID.lowercased])
+    }
+
+    // MARK: - Groups
+
+    func groups() async throws -> [FriendGroup] {
+        try await rpc("groups")
+    }
+
+    /// Creates a group (`id` nil) or renames it and replaces its members.
+    func saveGroup(id: UUID?, name: String, memberIDs: [UUID]) async throws -> FriendGroup {
+        var args: [String: Any] = ["p_name": name, "p_member_ids": memberIDs.map(\.lowercased)]
+        args["p_group_id"] = id?.lowercased ?? NSNull()
+        return try await rpc("save_group", args)
+    }
+
+    func deleteGroup(_ id: UUID) async throws {
+        try await rpc("delete_group", ["p_group_id": id.lowercased])
     }
 
     // MARK: - Report & block
@@ -457,8 +498,11 @@ enum APIError: LocalizedError, Equatable {
         case .server(let code):
             switch code {
             case "closed": "Lune is closed. It opens at 8:00 PM."
-            case "already_written", "upload_rejected": "You've already written this page."
-            case "invalid_day": "You can only write tonight's or yesterday's page."
+            case "already_written": "You've already written tonight's page."
+            case "upload_rejected": "This photo can't be added right now."
+            case "invalid_day": "A new day has started. Write tonight's page instead."
+            case "already_sent": "This page has been sent, so it can't be changed."
+            case "expired": "This page's day has ended, so it can't be sent anymore."
             case "text_required": "Write a few words about your day."
             case "text_too_long": "Pages can be up to 500 characters."
             case "entry_not_found": "This page couldn't be found."
@@ -469,6 +513,9 @@ enum APIError: LocalizedError, Equatable {
             case "too_many_friends": "Each person can have up to 1,000 friends."
             case "request_not_found": "This request is no longer there."
             case "profile_required": "Set your name first."
+            case "invalid_group_name": "Group names can be up to 30 characters."
+            case "too_many_groups": "You can have up to 100 groups."
+            case "group_not_found": "This group couldn't be found."
             default: "Something went wrong. Try again later."
             }
         case .http(let status, _) where status == 413:

@@ -22,8 +22,11 @@ extension Text {
     }
 }
 
-/// Lune's days: `yyyy-MM-dd` strings from the server, rolling over at 04:00 local time.
+/// Lune's days: `yyyy-MM-dd` strings from the server, starting at 20:00 local time.
 enum LuneDay {
+    /// Today's day key on this device: the day that started at the last 20:00.
+    static var today: String { key(Date.now.addingTimeInterval(-20 * 3600)) }
+
     private static let keyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

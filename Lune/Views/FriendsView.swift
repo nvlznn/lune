@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Your username, adding friends by username, requests to answer, and your friends.
+/// Your username, adding friends by username, requests to answer, your groups, and your friends.
 struct FriendsView: View {
     @Environment(APIClient.self) private var api
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var friends: [Friend] = []
     @State private var requests: [FriendRequest] = []
+    @State private var groups: [FriendGroup] = []
+    @State private var editingGroup: GroupTarget?
     @State private var loaded = false
     @State private var search = ""
     @State private var searching = false
@@ -77,6 +79,24 @@ struct FriendsView: View {
                     }
                 }
 
+                if !friends.isEmpty {
+                    Section {
+                        ForEach(groups) { group in
+                            Button {
+                                editingGroup = GroupTarget(group: group)
+                            } label: {
+                                LabeledContent(group.name, value: "\(group.memberIds.count)")
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                        Button("New Group", systemImage: "plus") { editingGroup = GroupTarget(group: nil) }
+                    } header: {
+                        Text("Groups")
+                    } footer: {
+                        Text("Send a page to several friends at once. Only you can see your groups.")
+                    }
+                }
+
                 Section {
                     if loaded && friends.isEmpty {
                         HStack(spacing: 16) {
@@ -134,6 +154,9 @@ struct FriendsView: View {
             } message: { _ in
                 Text("You’ll stop being friends, and they can’t find you or send you requests.")
             }
+            .sheet(item: $editingGroup) { target in
+                GroupEditorSheet(group: target.group, friends: friends) { Task { await load() } }
+            }
             .alert("Friend Limit Reached", isPresented: $limitReached) {
                 Button("OK") {}
             } message: {
@@ -148,7 +171,8 @@ struct FriendsView: View {
         do {
             async let friends = api.friends()
             async let requests = api.friendRequests()
-            (self.friends, self.requests) = try await (friends, requests)
+            async let groups = api.groups()
+            (self.friends, self.requests, self.groups) = try await (friends, requests, groups)
             loaded = true
         } catch is CancellationError {
         } catch {
@@ -219,8 +243,14 @@ struct FriendsView: View {
     }
 }
 
+/// The group sheet's subject: an existing group, or nil for a new one.
+private struct GroupTarget: Identifiable {
+    let group: FriendGroup?
+    let id = UUID()
+}
+
 /// Name over @username.
-private struct PersonLabel: View {
+struct PersonLabel: View {
     let name: String
     let username: String?
 
