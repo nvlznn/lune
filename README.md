@@ -8,7 +8,7 @@ Lune/                   app sources (folders sync into the project automatically
 LuneTests/              Swift Testing: image processing, decoding, end-to-end client test
 Config/                 xcconfigs (backend URL/key), Info.plist, entitlements
 Lune.storekit           local StoreKit config for Lune Premium (used by the Lune scheme)
-design/app-icon/        pixel-ghost icon (black background, no ground shadow) and its generator; same pixel map as GhostView
+design/app-icon/        moon icon (white circle with two eyes on black) and its generator; same drawing as MoonView
 supabase/
 ├── migrations/         schema + RLS, storage, RPCs, push
 ├── functions/cleanup/  deletes queued Storage files

@@ -100,7 +100,7 @@ struct FriendsView: View {
                 Section {
                     if loaded && friends.isEmpty {
                         HStack(spacing: 16) {
-                            GhostView(mood: .awake, floating: false).frame(width: 40)
+                            MoonView(mood: .awake, animated: false).frame(width: 40)
                             Text("No friends yet. Tell friends your username to start an exchange diary.")
                                 .foregroundStyle(.secondary)
                         }

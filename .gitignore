@@ -10,3 +10,6 @@ Config/Local.xcconfig
 
 # Xcode per-user state
 xcuserdata/
+
+# Throwaway output for review (renders, screenshots)
+/output/

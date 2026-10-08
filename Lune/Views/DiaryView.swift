@@ -65,7 +65,7 @@ struct DiaryView: View {
                         Label {
                             Text("No Pages Yet")
                         } icon: {
-                            GhostView(mood: .awake).frame(width: 72)
+                            MoonView(mood: .awake).frame(width: 72)
                         }
                     } description: {
                         Text("Every page you write is kept here.")

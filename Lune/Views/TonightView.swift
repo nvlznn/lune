@@ -92,7 +92,7 @@ private struct TonightList: View {
                         Label {
                             Text("Tonight’s Page")
                         } icon: {
-                            GhostView(mood: .awake).frame(width: 64)
+                            MoonView(mood: .awake).frame(width: 64)
                         }
                     } description: {
                         Text("One photo and a few words about your day.")
@@ -129,13 +129,13 @@ private struct TonightList: View {
     }
 }
 
-/// Writing is closed: the sleeping ghost and when it opens.
+/// Writing is closed: the sleeping moon and when it opens.
 private struct Asleep: View {
     let opensAt: Date?
 
     var body: some View {
         VStack(spacing: 16) {
-            GhostView(mood: .asleep)
+            MoonView(mood: .asleep)
                 .frame(width: 120)
                 .padding(.top, 24)
             Text("Lune Is Asleep")

@@ -9,7 +9,7 @@ struct PaywallSheet: View {
     var body: some View {
         SubscriptionStoreView(productIDs: LunePremium.productIDs) {
             VStack(spacing: 16) {
-                GhostView(mood: .awake)
+                MoonView(mood: .awake)
                     .frame(width: 96)
                 Text("Lune Premium")
                     .font(.largeTitle.bold())

@@ -16,7 +16,7 @@ struct SignInView: View {
         VStack(spacing: 0) {
             Spacer()
             VStack(spacing: 8) {
-                GhostView(mood: .awake)
+                MoonView(mood: .awake)
                     .frame(width: 120)
                     .padding(.bottom, 16)
                 Text("Lune")
