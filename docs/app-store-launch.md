@@ -29,11 +29,15 @@
 
 App 裡的連結、訂閱頁和 App Store 都會連到這些網址，所以一定要先上線。
 
-- [ ] 打開 `docs/legal/terms.md`，把所有 `[方括號]` 換成真實資料，發布到 `https://lune.noky.dev/terms`。
-- [ ] 打開 `docs/legal/privacy.md`，一樣替換方括號（`[REGION]` 要填階段 2 選的 Supabase 地區），發布到 `https://lune.noky.dev/privacy`。
-- [ ] 建一個客服頁 `https://lune.noky.dev/support`，內容寫上 `support@noky.dev` 就可以。App Store 的「支援網址」一定要是網頁，不能填 email。
+- [x] 網站原始碼在 `website/`（首頁、`/terms`、`/privacy`、`/support`），營運者 Noky、適用台灣法律、資料存放東京都已填好。
+- [ ] 部署到 Vercel，網域設為 `lune.noky.dev`：
+  ```sh
+  cd website && vercel --prod
+  ```
+  然後在 Vercel 專案的 Domains 加入 `lune.noky.dev`，並在 noky.dev 的 DNS 加上 Vercel 指示的 CNAME。
+- [ ] 打開 `/terms`、`/privacy`、`/support` 三個網址，確認都能看到。
 - [ ] 確認 `support@noky.dev` 收得到信。
-- [ ] 兩份文件都是草稿，建議給懂法律的人看過。
+- [ ] 條款和隱私權不是律師寫的，建議給懂法律的人看過。若 Supabase 改選別的地區，要改 `website/privacy.html`。
 
 > 服務條款第 4 節的「零容忍不當內容、可檢舉和封鎖、24 小時內處理」是 Apple 審核 UGC App（Guideline 1.2）時會看的重點，請保留。
 
@@ -339,5 +343,5 @@ limit 50;
   - `setup_review_account`：只有 service role 能呼叫。
   - 每 10 分鐘執行一次的換日排程。
   - `scripts/review-account`：建立帳號的腳本和示範圖片。
-- 服務條款和隱私權政策草稿：`docs/legal/terms.md`、`docs/legal/privacy.md`。
+- 服務條款和隱私權政策：`website/terms.html`、`website/privacy.html`。
 - 測試全部通過：pgTAP 162 個、Node 整合測試 14 個、Swift 29 個。Release 版可以正常編譯。
