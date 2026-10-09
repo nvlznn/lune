@@ -1,0 +1,58 @@
+:root {
+  --bg: #000;
+  --fg: #f2f2f7;
+  --muted: #98989f;
+  --line: #2c2c2e;
+  --accent: #a9aef5;
+  --card: #1c1c1e;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fff;
+    --fg: #1c1c1e;
+    --muted: #6c6c70;
+    --line: #e5e5ea;
+    --accent: #5b61d6;
+    --card: #f2f2f7;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--accent); }
+.wrap { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+header.site { padding: 20px 0; }
+header.site a { color: var(--fg); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 10px; }
+header.site img { width: 28px; height: 28px; border-radius: 7px; }
+footer.site { border-top: 1px solid var(--line); margin-top: 72px; padding: 28px 0 48px; color: var(--muted); font-size: 14px; }
+footer.site nav { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; }
+footer.site a { color: var(--muted); }
+
+.hero { text-align: center; padding: 56px 0 24px; }
+.hero img { width: 120px; height: 120px; border-radius: 27px; }
+.hero h1 { font-size: 44px; line-height: 1.1; margin: 24px 0 8px; letter-spacing: -0.02em; }
+.hero p.slogan { font-size: 22px; color: var(--muted); margin: 0 0 28px; }
+.soon { display: inline-block; padding: 10px 20px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 15px; }
+
+.steps { list-style: none; padding: 0; margin: 48px 0 0; display: grid; gap: 12px; }
+.steps li { background: var(--card); border-radius: 16px; padding: 18px 20px; }
+.steps strong { display: block; margin-bottom: 2px; }
+.steps span { color: var(--muted); }
+
+article h1 { font-size: 32px; line-height: 1.2; margin: 24px 0 4px; letter-spacing: -0.01em; }
+article .updated { color: var(--muted); font-size: 14px; margin: 0 0 28px; }
+article h2 { font-size: 20px; margin: 36px 0 8px; }
+article ul { padding-left: 22px; }
+article li { margin: 4px 0; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 12px 0; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+details { border-bottom: 1px solid var(--line); padding: 14px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin: 8px 0 0; color: var(--muted); }
