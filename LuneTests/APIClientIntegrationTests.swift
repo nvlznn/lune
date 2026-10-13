@@ -55,11 +55,13 @@ struct APIClientIntegrationTests {
             try await alice.updateEntry(page.entryId, text: "Too late")
         }
 
-        // Bob sees a locked letter until he writes his own page (kept to himself)
+        // Alice's page is sent, but a letter only arrives the next evening: Bob sees nothing yet
         var bobTonight = try await bob.tonight()
         #expect(bobTonight.letters.isEmpty)
-        #expect(bobTonight.locked.map(\.username) == [aliceUsername])
-        _ = try await bob.writeEntry(day: today, jpeg: photo.jpeg, takenAt: nil, text: "Rainy.", recipients: [])
+
+        // A night passes: it's now last night's letter, and Bob can read it without writing first
+        let yesterday = try LocalSupabase.previousDay(of: today)
+        try await LocalSupabase.moveEntry(page.entryId, toDay: yesterday)
         bobTonight = try await bob.tonight()
         let fromAlice = try #require(bobTonight.letters.first)
         #expect(fromAlice.name == "Alice")
@@ -80,7 +82,7 @@ struct APIClientIntegrationTests {
         #expect(try await alice.groups().isEmpty)
 
         // Diary and export
-        #expect(try await alice.myEntries().map(\.day) == [today])
+        #expect(try await alice.myEntries().map(\.day) == [yesterday])
         #expect(try await alice.exportEntries().count == 1)
 
         // During the day writing is closed (reading during the day is covered by pgTAP)
@@ -136,6 +138,30 @@ enum LocalSupabase {
         utc.timeZone = .gmt
         let offset = ((hour - utc.component(.hour, from: .now) + 36) % 24) - 12
         return offset == 0 ? "Etc/GMT" : offset > 0 ? "Etc/GMT-\(offset)" : "Etc/GMT+\(-offset)"
+    }
+
+    /// The fixed service-role key every local `supabase start` uses (public demo key, local database only).
+    private static let localServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+
+    /// "2026-10-10" → "2026-10-09".
+    static func previousDay(of day: String) throws -> String {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = .gmt
+        let format = Date.ISO8601FormatStyle(timeZone: .gmt).year().month().day()
+        let date = try Date(day, strategy: format)
+        return utc.date(byAdding: .day, value: -1, to: date)!.formatted(format)
+    }
+
+    /// Lets a night pass for one page, so it becomes a letter that has arrived (clients can't change a page's day).
+    static func moveEntry(_ entryID: UUID, toDay day: String) async throws {
+        var request = URLRequest(url: config.url.appending(path: "rest/v1/entries").appending(queryItems: [.init(name: "id", value: "eq.\(entryID.uuidString.lowercased())")]))
+        request.httpMethod = "PATCH"
+        request.setValue(localServiceKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(localServiceKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["day": day])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as? HTTPURLResponse)?.statusCode == 204)
     }
 
     static func signedInClient(name: String, localHour: Int) async throws -> APIClient {

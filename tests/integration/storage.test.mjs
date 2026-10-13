@@ -5,7 +5,7 @@
 
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { admin, befriend, env, fileExists, JPEG, newPath, rpc, signUp, uploadFile, writePage } from "./helpers.mjs";
+import { admin, befriend, env, fileExists, JPEG, newPath, psql, rpc, signUp, uploadFile, writePage } from "./helpers.mjs";
 
 const CLEANUP_SECRET = process.env.CLEANUP_SECRET ?? "local-cleanup-secret";
 
@@ -27,6 +27,8 @@ before(async () => {
 test("a page's photo uploads into your own folder", async () => {
   alicePage = await writePage(alice, { to: [bob], text: "Tonight" });
   assert.ok(await fileExists(alicePage.storage_path));
+  // Letters arrive the next evening: let a night pass, so this is now last night's letter to Bob.
+  psql(`update public.entries set day = day - 1 where id = '${alicePage.entry_id}'`);
 });
 
 test("no uploads during the day", async () => {
@@ -40,11 +42,8 @@ test("not into someone else's folder, and only JPEGs up to 4 MB", async () => {
   assert.ok((await uploadFile(bob, newPath(bob), Buffer.alloc(4 * 1024 * 1024 + 1))).error);
 });
 
-test("a recipient can't read the photo until they write tonight", async () => {
-  const locked = await bob.client.storage.from("entries").createSignedUrl(alicePage.storage_path, 60);
-  assert.ok(locked.error);
-
-  bobPage = await writePage(bob);
+test("a recipient can read the photo once the letter has arrived, without writing first", async () => {
+  // Bob hasn't written a page tonight, and doesn't need to.
   const { data, error } = await bob.client.storage.from("entries").createSignedUrl(alicePage.storage_path, 60);
   assert.ifError(error);
   const res = await fetch(data.signedUrl);
@@ -67,6 +66,7 @@ test("files can't be overwritten or deleted directly", async () => {
 });
 
 test("swapping the photo of an unsent page deletes the old one after cleanup", async () => {
+  bobPage = await writePage(bob);
   const path = newPath(bob);
   assert.ifError((await uploadFile(bob, path)).error);
   await rpc(bob, "update_entry", { p_entry_id: bobPage.entry_id, p_text: "New photo", p_storage_path: path });

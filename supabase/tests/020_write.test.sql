@@ -99,7 +99,7 @@ select throws_ok(
   '42501', null, 'no uploads once tonight''s page is sent and nothing else is unsent');
 select tests.logout();
 
--- Recipients stay even if they leave; the letter stays locked.
+-- Recipients stay even if they leave.
 select tests.login_as(tests.id('bob'));
 select public.remove_friend(tests.id('alice'));
 select tests.logout();

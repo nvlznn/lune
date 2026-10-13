@@ -154,22 +154,13 @@ begin
 end;
 $$;
 
--- Letters someone can open right now, in the order tonight() lists them.
+-- Letters that have arrived for someone, in the order tonight() lists them.
 create or replace function tests.letters(p_user_id uuid)
 returns uuid[]
 language sql
 as $$
   select coalesce(array_agg((page ->> 'entry_id')::uuid order by i), '{}')
   from jsonb_array_elements(tests.tonight(p_user_id) -> 'letters') with ordinality as t (page, i)
-$$;
-
--- Names on the letters someone can't open yet.
-create or replace function tests.locked(p_user_id uuid)
-returns text[]
-language sql
-as $$
-  select coalesce(array_agg(card ->> 'name' order by i), '{}')
-  from jsonb_array_elements(tests.tonight(p_user_id) -> 'locked') with ordinality as t (card, i)
 $$;
 
 grant execute on all functions in schema tests to authenticated, anon;

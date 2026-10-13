@@ -47,28 +47,17 @@ struct Person: Codable, Hashable, Identifiable {
 /// Your current day (`tonight` RPC): your page and the letters friends sent you.
 struct TonightState: Codable, Equatable {
     var today: String
-    /// Whether pages can be written now (20:00–04:00).
+    /// Whether pages can be written now (20:00–05:00).
     var open: Bool
     /// When closed: when writing opens (20:00).
     var opensAt: Date?
-    /// When open: when writing closes (04:00).
+    /// When open: when the night ends (05:00).
     var closesAt: Date?
-    /// When today's letters disappear and a new day starts (20:00 tomorrow).
+    /// When the next day starts (20:00 tomorrow). Last night's letters disappear earlier, when writing closes (`closesAt`).
     var endsAt: Date
     var mine: Entry?
-    /// Letters you can read, newest first (only once you've written today's page).
+    /// Last night's letters from friends, newest first. They arrive at 20:00 and last until the night ends at 05:00.
     var letters: [Entry]
-    /// Letters waiting for you to write today's page, newest first.
-    var locked: [LockedLetter]
-
-    struct LockedLetter: Codable, Equatable, Identifiable {
-        let userId: UUID
-        let name: String
-        let username: String?
-        let avatarPath: String?
-        let sentAt: Date
-        var id: UUID { userId }
-    }
 }
 
 /// One of your own lists of friends, for sending to several at once.

@@ -38,8 +38,7 @@ struct ResponseDecodingTests {
           "today": "2026-10-07", "open": true, "opens_at": null, "closes_at": "2026-10-07T20:00:00+00:00",
           "ends_at": "2026-10-08T12:00:00+00:00",
           "mine": \(page("Me", #""sent_at": "2026-10-07T13:12:45+00:00", "recipients": [{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "username": "amy", "avatar_path": null}]"#)),
-          "letters": [\(page("Amy", #""sent_at": "2026-10-07T13:00:00+00:00", "recipients": null"#))],
-          "locked": []
+          "letters": [\(page("Amy", #""sent_at": "2026-10-07T13:00:00+00:00", "recipients": null"#))]
         }
         """
         let state = try JSONDecoder.supabase.decode(TonightState.self, from: Data(json.utf8))
@@ -52,15 +51,14 @@ struct ResponseDecodingTests {
         #expect(state.closesAt != nil)
     }
 
-    @Test func decodesLockedLetters() throws {
+    @Test func decodesAClosedDayWithNoLetters() throws {
         let json = """
         {"today": "2026-10-07", "open": false, "opens_at": "2026-10-08T12:00:00+00:00", "closes_at": null,
-         "ends_at": "2026-10-08T12:00:00+00:00", "mine": null, "letters": [],
-         "locked": [{"user_id": "2b1f0c4e-6d0e-4c1b-9a7e-0f1d2c3b4a59", "name": "Amy", "username": "amy",
-                     "avatar_path": null, "sent_at": "2026-10-07T13:00:00+00:00"}]}
+         "ends_at": "2026-10-08T12:00:00+00:00", "mine": null, "letters": []}
         """
         let state = try JSONDecoder.supabase.decode(TonightState.self, from: Data(json.utf8))
-        #expect(state.locked.map(\.username) == ["amy"])
+        #expect(!state.open)
+        #expect(state.letters.isEmpty)
         #expect(state.mine == nil)
     }
 

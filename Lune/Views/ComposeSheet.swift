@@ -148,7 +148,8 @@ struct ComposeSheet: View {
                     }
                 }
             }
-            .task { if editing == nil { await loadFriends() } }
+            // Runs again when Send To pops back; loading again would reset the chosen recipients.
+            .task { if editing == nil && !friendsLoaded { await loadFriends() } }
             .onChange(of: pickerItem) { _, item in
                 if let item { Task { await prepare(item) } }
             }

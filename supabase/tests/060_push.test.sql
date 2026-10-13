@@ -1,6 +1,6 @@
--- Push targets: recipients of a letter, friend requests, and the nightly opening push.
+-- Push targets: friend requests and the nightly opening push (letters arrive at 20:00, so that's the only letter push).
 begin;
-select plan(9);
+select plan(8);
 
 select tests.remember('alice', tests.create_user('alice'));
 select tests.remember('bob', tests.create_user('bob'));
@@ -12,24 +12,9 @@ select tests.befriend(tests.id('alice'), tests.id('dave'));
 insert into public.devices (token, user_id) values
   ('alice-phone', tests.id('alice')), ('bob-phone', tests.id('bob')), ('bob-ipad', tests.id('bob')),
   ('carol-phone', tests.id('carol')), ('dave-phone', tests.id('dave'));
-select tests.login_as(tests.id('dave'));
-select public.block_user(tests.id('alice'));
-select tests.logout();
 
-select tests.remember('a1', tests.write(tests.id('alice'), array[tests.id('bob'), tests.id('carol'), tests.id('dave')]));
-select is(array(select token from public.push_targets_letter(tests.id('a1'), array[tests.id('bob'), tests.id('carol'), tests.id('dave')]) order by token),
-  array['bob-ipad', 'bob-phone'],
-  'a letter notifies its recipients on every device — not someone whose day hasn''t started, not across a block');
-select is((select distinct writer_name from public.push_targets_letter(tests.id('a1'), array[tests.id('bob')])), 'alice',
-  'with the writer''s name');
-select tests.remember('frank', tests.create_user('frank'));
-select tests.befriend(tests.id('alice'), tests.id('frank'));
-insert into public.devices (token, user_id) values ('frank-phone', tests.id('frank'));
-select tests.login_as(tests.id('alice'));
-select public.add_recipients(tests.id('a1'), array[tests.id('frank')]);
-select tests.logout();
-select is(array(select token from public.push_targets_letter(tests.id('a1'), array[tests.id('frank')])), array['frank-phone'],
-  'adding a recipient later notifies only them');
+-- Sending a page notifies nobody: nothing can be read until 20:00 the next evening.
+select hasnt_trigger('public', 'entry_recipients', 'entry_recipients_after_insert', 'sending a page sends no push');
 
 -- Friend requests
 select tests.remember('erin', tests.create_user('erin'));
@@ -48,13 +33,21 @@ select is(array(select token from public.push_targets_opening() order by token),
 select is(array(select token from public.push_targets_opening()), '{}'::text[], 'only once per night');
 
 delete from private.window_pushes;
--- Carol's day now matches the night Alice wrote to her (22:00 and 20:00 zones share a date); Dave isn't her friend.
-select tests.page_on(tests.id('dave'), private.user_today(tests.id('carol')), array[tests.id('carol')]);
+-- Letters that arrive tonight were written last night: Alice's counts, Dave's doesn't (not Carol's friend),
+-- and one written tonight isn't delivered yet.
+select tests.page_on(tests.id('alice'), private.user_today(tests.id('carol')) - 1, array[tests.id('carol')]);
+select tests.page_on(tests.id('dave'), private.user_today(tests.id('carol')) - 1, array[tests.id('carol')]);
 select is((select writers from public.push_targets_opening() where token = 'carol-phone'), array['alice'],
-  'it names friends who already wrote to you tonight');
+  'it names friends who wrote to you last night');
+
+delete from private.window_pushes;
+delete from public.entries where user_id = tests.id('alice');
+select tests.page_on(tests.id('alice'), private.user_today(tests.id('carol')), array[tests.id('carol')]);
+select is((select writers from public.push_targets_opening() where token = 'carol-phone'), '{}'::text[],
+  'not a page written tonight: it arrives tomorrow');
 
 select tests.login_as(tests.id('alice'));
-select throws_ok($$ select public.push_targets_letter(gen_random_uuid(), '{}') $$, '42501', null, 'users can''t call push functions');
+select throws_ok($$ select public.push_targets_request(gen_random_uuid(), gen_random_uuid()) $$, '42501', null, 'users can''t call push functions');
 select tests.logout();
 
 select public.remove_device_tokens(array['bob-ipad']);

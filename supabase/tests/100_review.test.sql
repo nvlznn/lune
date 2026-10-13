@@ -1,6 +1,6 @@
--- The App Review account: always open, with friends whose letters follow its day.
+-- The App Review account: always open, with friends whose letters are always dated yesterday (so they're always delivered).
 begin;
-select plan(11);
+select plan(12);
 
 -- The reviewer lives where it's midday: closed for everyone else.
 select tests.remember('reviewer', tests.create_user('reviewer', false));
@@ -18,20 +18,20 @@ select public.setup_review_account(tests.id('reviewer'), 'App Review', 'lune.rev
 select is(tests.tonight(tests.id('reviewer')) ->> 'open', 'true', 'the review account is open at midday');
 select is(tests.tonight(tests.id('reviewer')) ->> 'closes_at', null, 'and never closes');
 select is(tests.tonight(tests.id('someone')) ->> 'open', 'false', 'everyone else is still closed');
-select is(
-  array(select x from unnest(tests.locked(tests.id('reviewer'))) x order by x), array['Leo', 'Mia'],
-  'its friends'' letters are waiting, locked');
+select is(cardinality(tests.letters(tests.id('reviewer'))), 2, 'its friends'' letters are waiting, readable at any hour');
 select is((select username from public.profiles where id = tests.id('reviewer')), 'lune.review', 'the profile is set up');
+select is((select array_agg(distinct day) from public.entries where user_id in (tests.id('mia'), tests.id('leo'))),
+  array[private.user_today(tests.id('reviewer')) - 1], 'the letters are dated yesterday, as if written last night');
 
 select tests.remember('r_page', tests.write(tests.id('reviewer')));
-select is(cardinality(tests.letters(tests.id('reviewer'))), 2, 'writing at any hour opens them');
+select is(tests.tonight(tests.id('reviewer')) -> 'mine' ->> 'entry_id', tests.id('r_page')::text, 'and it can write at any hour');
 
--- A new day: the letters move to it.
+-- A new day: the letters move to the new "yesterday".
 update public.entries set day = day - 1 where user_id in (tests.id('mia'), tests.id('leo'));
-select is(cardinality(tests.letters(tests.id('reviewer'))) + cardinality(tests.locked(tests.id('reviewer'))), 0,
-  'yesterday''s letters are gone');
+select is(cardinality(tests.letters(tests.id('reviewer'))), 0,
+  'last night''s letters are gone once the day moves on');
 select private.refresh_review_letters();
-select is(cardinality(tests.letters(tests.id('reviewer'))), 2, 'the refresh brings them to today');
+select is(cardinality(tests.letters(tests.id('reviewer'))), 2, 'the refresh brings them back');
 
 -- Running setup again replaces the letters instead of adding more.
 select set_config('tests.old_path', (select storage_path from public.entries where user_id = tests.id('mia')), false);

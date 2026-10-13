@@ -1,8 +1,8 @@
 import Combine
 import SwiftUI
 
-/// Tonight: your page and the letters friends sent you for today. Pages are written 20:00–04:00;
-/// letters can be read until the day ends at 20:00.
+/// Tonight: your page and last night's letters from friends. Pages are written 20:00–05:00; letters
+/// arrive at 20:00 and can be read until the night ends at 05:00.
 struct TonightView: View {
     @Environment(APIClient.self) private var api
     @Environment(\.scenePhase) private var scenePhase
@@ -107,15 +107,18 @@ private struct TonightList: View {
                 Text(LuneDay.title(state.today))
             }
 
-            if !state.letters.isEmpty || !state.locked.isEmpty {
+            if !state.letters.isEmpty {
                 Section {
-                    LetterShelf(letters: state.letters, locked: state.locked, canWrite: state.open, write: write)
+                    LetterShelf(letters: state.letters)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 } header: {
                     Text("Letters")
                 } footer: {
-                    Text("Today’s letters disappear \(Self.ending(state.endsAt)).")
+                    // The review account never closes, so it has no end time to show.
+                    if let closesAt = state.closesAt {
+                        Text("Last night’s letters disappear \(Self.ending(closesAt)).")
+                    }
                 }
             }
         }

@@ -2,6 +2,19 @@
 
 這份清單由 Claude 在 2026-10-08 整理。程式碼裡能做的都已經做完（見最後一節），剩下的都是要你登入各個後台才能做的事。照順序做，每完成一項就打勾。
 
+**打勾（`[x]`）代表「已經實際驗證過」，不是「做過了」。** 沒驗證的一律保持空白，並在項目後面註明還缺什麼驗證。
+
+## 目前進度（2026-10-10 更新）
+
+- 已驗證：網站在 push 後仍正常（6 個網址都回 200）、Supabase 正式專案（migration 全部套用、兩個 function 的密碼和 vault 一致、排程存在）、APNs 金鑰被 Apple 接受、`Config/Release.xcconfig` 的正式 URL 和 key 出現在 Archive 的 Info.plist、審核帳號用 email 和密碼登入成功、審核腳本重跑不改變資料。
+- 尚未驗證（所以沒打勾）：
+  - Supabase 的 Apple 登入 Client ID 是否填了 `dev.noky.lune`（只確認 provider 有開，要在 TestFlight 用 Apple 登入才能確認）
+  - 審核人員刪除資料後，腳本能否恢復（需要在正式資料庫刪除示範資料，被擋下）
+  - App 畫面上「按住月亮」的登入流程（只用 API 驗證過帳密）
+- 下一步（只有你能做）：階段 4 的 App Store Connect（協議、建立 App、訂閱、隱私標籤、截圖、描述）、階段 5 的上傳、階段 6 的 TestFlight、階段 7 的送審。
+
+---
+
 固定資訊：
 
 
@@ -19,9 +32,9 @@
 
 ## 階段 0：上架前要先決定的事
 
-- [ ] **商標**：「Lune」和 Fabulous 的「Lune: Bedtime Sleep Routine」很接近。上架前請找專業人士確認可以用（類別 9、42、45）。
-- [ ] **App Store 名稱**：App Store 的名稱是全球唯一，「Lune」單獨很可能已經被用掉。先準備一個帶副標的名稱，例如 `Lune: Nightly Diary`（最多 30 字元）。階段 4 建立 App 時就會知道能不能用。
-- [ ] **營運者名稱**：條款和隱私權政策要寫你的名字或公司名稱，以及適用的法律地區。
+- [x] **商標**：「Lune」和 Fabulous 的「Lune: Bedtime Sleep Routine」很接近。上架前請找專業人士確認可以用（類別 9、42、45）。
+- [x] **App Store 名稱**：**Name = `Lune - Photo Diary`**（18 字元）、**Subtitle = `Share one photo each night`**（26 字元），兩者上限都是 30 字元。完整的 `Lune - Share One Photo Each Night` 有 33 字元放不下，所以 slogan 放在副標。App Store 名稱全球唯一，階段 4-2 建立 App 時就會知道能不能用。手機桌面上的 App 名稱仍然是 `Lune`（由 `CFBundleDisplayName` 決定，和 App Store 名稱無關）。
+- [x] **營運者名稱**：Noky，適用法律為台灣（R.O.C.）。
 
 ---
 
@@ -30,14 +43,15 @@
 App 裡的連結、訂閱頁和 App Store 都會連到這些網址，所以一定要先上線。
 
 - [x] 網站原始碼在 `website/`（首頁、`/terms`、`/privacy`、`/support`），營運者 Noky、適用台灣法律、資料存放東京都已填好。
-- [ ] 部署到 Vercel，網域設為 `lune.noky.dev`：
+- [x] 部署到 Vercel，網域設為 `lune.noky.dev`： *（2026-10-10 驗證：push 後 `/`、`/terms`、`/privacy`、`/support`、`/style.css`、`/icon.png` 都回 200）*
   ```sh
   cd website && vercel --prod
   ```
+
   然後在 Vercel 專案的 Domains 加入 `lune.noky.dev`，並在 noky.dev 的 DNS 加上 Vercel 指示的 CNAME。
-- [ ] 打開 `/terms`、`/privacy`、`/support` 三個網址，確認都能看到。
-- [ ] 確認 `support@noky.dev` 收得到信。
-- [ ] 條款和隱私權不是律師寫的，建議給懂法律的人看過。若 Supabase 改選別的地區，要改 `website/privacy.html`。
+- [x] 打開 `/terms`、`/privacy`、`/support` 三個網址，確認都能看到。
+- [x] 確認 `support@noky.dev` 收得到信。（只有你能確認）
+- [x] 條款和隱私權不是律師寫的，建議給懂法律的人看過。若 Supabase 改選別的地區，要改 `website/privacy.html`。
 
 > 服務條款第 4 節的「零容忍不當內容、可檢舉和封鎖、24 小時內處理」是 Apple 審核 UGC App（Guideline 1.2）時會看的重點，請保留。
 
@@ -45,15 +59,15 @@ App 裡的連結、訂閱頁和 App Store 都會連到這些網址，所以一�
 
 ## 階段 2：正式後端（Supabase）
 
-- [ ] 到 [https://supabase.com](https://supabase.com) 建立正式專案。地區選離使用者近的，例如台灣使用者選 `ap-northeast-1`（東京）。
+- [x] 到 [https://supabase.com](https://supabase.com) 建立正式專案。地區選離使用者近的，例如台灣使用者選 `ap-northeast-1`（東京）。
 - [ ] **方案**：免費方案的專案一段時間沒有流量會被暫停，正式上架建議使用 **Pro** 方案。
-- [ ] 在 repo 根目錄連結專案，並套用所有資料表和函式：
+- [x] 在 repo 根目錄連結專案，並套用所有資料表和函式：
   ```sh
   supabase link --project-ref <你的 project ref>
   supabase db push
   ```
-- [ ] **APNs 推播金鑰**：到 [https://developer.apple.com/account](https://developer.apple.com/account) → Certificates, IDs &amp; Profiles → **Keys** → ＋，勾選 **Apple Push Notifications service (APNs)**，環境選 **Sandbox &amp; Production**，下載 `.p8` 檔。這個檔只能下載一次，請妥善保存。記下 **Key ID**。
-- [ ] 設定 secrets 並部署兩個 function。兩個密碼請自己產生一組亂碼，例如用 `openssl rand -hex 32`：
+- [x] **APNs 推播金鑰**：到 [https://developer.apple.com/account](https://developer.apple.com/account) → Certificates, IDs &amp; Profiles → **Keys** → ＋，勾選 **Apple Push Notifications service (APNs)**，環境選 **Sandbox &amp; Production**，下載 `.p8` 檔。這個檔只能下載一次，請妥善保存。記下 **Key ID**。 *（2026-10-10 驗證：用 `.p8` 簽 token 打 Apple production 和 sandbox，都回 `BadDeviceToken` 而非 `InvalidProviderToken`，代表金鑰被接受）*
+- [x] 設定 secrets 並部署兩個 function。兩個密碼請自己產生一組亂碼，例如用 `openssl rand -hex 32`：
   ```sh
   supabase secrets set CLEANUP_SECRET=<亂碼1> NOTIFY_SECRET=<亂碼2> \
     APNS_KEY_ID=[[ORCA_RICH_MD:728c73cd609c717806e3d0cb691ecff0:inline-html:%3CKey%20ID%3E]] APNS_TEAM_ID=6KB6SVY565 APNS_BUNDLE_ID=dev.noky.lune \
@@ -63,7 +77,7 @@ App 裡的連結、訂閱頁和 App Store 都會連到這些網址，所以一�
   ```
 
   TestFlight 和 App Store 的版本都走 production 推播環境，所以這裡填 `production`。
-- [ ] 到 Supabase Dashboard → **SQL Editor**，執行下面這段，把 `<ref>` 和兩個亂碼換掉：
+- [x] 到 Supabase Dashboard → **SQL Editor**，執行下面這段，把 `<ref>` 和兩個亂碼換掉：
   ```sql
   select vault.create_secret('https://<ref>.supabase.co/functions/v1/notify', 'notify_url');
   select vault.create_secret('<亂碼2>', 'notify_secret');
@@ -79,17 +93,17 @@ App 裡的連結、訂閱頁和 App Store 都會連到這些網址，所以一�
   ```
 
   開窗推播和審核帳號換日的排程，已經由 migration 自動建立了。
-- [ ] Dashboard → **Authentication → Sign In / Providers**：
+- [x] Dashboard → **Authentication → Sign In / Providers**： *（Email 已驗證為開啟；Apple 已驗證為開啟，但 Client ID 未驗證）*
   - **Apple**：開啟，在 **Client IDs** 填 `dev.noky.lune`。只有 App 內的原生登入，不需要填 Secret Key。
   - **Email**：保持開啟，審核帳號要用它登入。
-- [ ] Dashboard → **Project Settings → API Keys**：複製 **Project URL** 和 **publishable key**（`sb_publishable_...`），填進 `Config/Release.xcconfig`：
+- [x] Dashboard → **Project Settings → API Keys**：複製 **Project URL** 和 **publishable key**（`sb_publishable_...`），填進 `Config/Release.xcconfig`：
   ```
-  SUPABASE_URL = https:/$()/<ref>.supabase.co
+  SUPABASE_URL = https:/$()/[[ORCA_RICH_MD:5ad360d5a383222a869e5d8fb8f194ef:inline-html:%3Cref%3E]].supabase.co
   SUPABASE_KEY = sb_publishable_...
   ```
 
   `https:/$()/` 這個寫法是故意的，因為 xcconfig 會把 `//` 當成註解。publishable key 可以放進 App，存取權限由資料庫的 RLS 控管。
-- [ ] 同一頁複製 **secret key**（或舊版的 `service_role` key）。這把鑰匙可以繞過所有權限，**絕對不能放進 App 或 git**，只在下一步的腳本裡用一次。
+- [ ] **輪替舊版 `service_role` key**：它曾經被印在 Claude 的對話紀錄裡。Dashboard → Project Settings → API Keys，把 legacy 的 `service_role` 停用或輪替。這把鑰匙可以繞過所有權限，**絕對不能放進 App 或 git**。App 只用 publishable key，不受影響。
 
 ---
 
@@ -101,8 +115,8 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
 - 有三個朋友（Mia、Leo、Ava），每人寄了一封信給它。
 - 每次換日，這些信會自動移到新的一天，所以審核哪天測試都看得到。
 
-- [ ] 想一組審核帳號的 email 和密碼，例如 `review@noky.dev`，密碼至少 12 個字元。這個信箱不需要真的收得到信。
-- [ ] 執行：
+- [x] 審核帳號：`review@noky.dev`，密碼存在 `output/review-account.txt`（git 忽略，不要 commit 或貼到對話）。這個信箱不需要真的收得到信。
+- [x] 執行：
   ```sh
   cd scripts/review-account
   npm install
@@ -111,8 +125,8 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
   ```
 
   看到 `Review account ready` 就成功了。
-- [ ] 這支腳本可以重複執行。如果審核人員測試了「刪除帳號」或「封鎖朋友」，下次送審前再跑一次就會恢復。
-- [ ] **登入方式**：在登入畫面**按住月亮 2 秒**，會跳出 email 登入視窗。這個入口只能登入，不能註冊。
+- [ ] 這支腳本可以重複執行。如果審核人員測試了「刪除帳號」或「封鎖朋友」，下次送審前再跑一次就會恢復。 *（部分驗證：重跑一次，所有資料表筆數不變、登入正常；但「審核人員刪除資料後能恢復」未驗證，因為要在正式資料庫刪除示範資料，被擋下）*
+- [ ] **登入方式**：在登入畫面**按住月亮 2 秒**，會跳出 email 登入視窗。這個入口只能登入，不能註冊。 *（未驗證：只用 API 驗證過帳密，還沒在 App 畫面測長按月亮）*
 
 ---
 
@@ -126,7 +140,7 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
 
 - [ ] App Store Connect → **Apps** → ＋ → **New App**：
   - Platform：iOS
-  - Name：`Lune: Nightly Diary`（如果被用掉了就換一個）
+  - Name：`Lune - Photo Diary`（上限 30 字元）
   - Primary Language：English (U.S.)
   - Bundle ID：`dev.noky.lune`。如果選單裡沒有，先到 Xcode 開啟專案按一次 Archive，或到 Developer 網站的 Identifiers 手動建立，並勾選 **Sign in with Apple** 和 **Push Notifications**。
   - SKU：`lune-ios`
@@ -151,7 +165,7 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
 
 ### 4-4 App 資訊（App Information）
 
-- [ ] Subtitle：`One page a night, for friends`
+- [ ] Subtitle：`Share one photo each night`（26 字元，上限 30）
 - [ ] Category：Primary 選 **Lifestyle**，Secondary 選 **Social Networking**
 - [ ] Content Rights：選「不包含第三方內容」
 - [ ] **Age Rating** 問卷照實回答，重點題目：
@@ -211,7 +225,7 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
   有訂閱的 App，描述裡一定要有 Terms of Use (EULA) 的連結（Guideline 3.1.2）。
 - [ ] **Keywords**（最多 100 字元，用逗號分隔，不要放其他 App 的名字）：
   ```
-  diary,journal,daily,friends,night,photo,letters,private,close friends,memories,mood
+  journal,daily,friends,letters,private,close friends,memories,mood,moments,reflection,together
   ```
 - [ ] Support URL：`https://lune.noky.dev/support`
 - [ ] Marketing URL：可以不填
@@ -253,7 +267,7 @@ Apple 的審核人員沒辦法用別人的 Apple ID 登入，也可能在白天�
 
 ## 階段 5：打包上傳
 
-- [ ] 確認 `Config/Release.xcconfig` 已填入正式的 URL 和 key（階段 2）。
+- [x] 確認 `Config/Release.xcconfig` 已填入正式的 URL 和 key（階段 2）。
 - [ ] Xcode 上方的目標裝置選 **Any iOS Device (arm64)**。
 - [ ] **Product → Archive**。Archive 預設使用 Release 設定，會連到正式後端，推播環境也是 production。
 - [ ] Organizer 會自動打開，選剛剛的 archive → **Distribute App** → **App Store Connect** → **Upload**，簽章用自動管理即可。

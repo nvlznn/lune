@@ -7,13 +7,9 @@ enum LetterCardSize {
     static let photoHeight: CGFloat = 180
 }
 
-/// Letters side by side: open ones lead to the full letter, locked ones show who wrote.
+/// Letters side by side; each leads to the full letter.
 struct LetterShelf: View {
     let letters: [Entry]
-    let locked: [TonightState.LockedLetter]
-    /// Whether you can still write tonight's page to open locked letters.
-    let canWrite: Bool
-    let write: () -> Void
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -23,14 +19,6 @@ struct LetterShelf: View {
                         LetterCard(entry: entry)
                     }
                     .buttonStyle(.plain)
-                }
-                ForEach(locked) { letter in
-                    Button(action: write) {
-                        LockedLetterCard(letter: letter, canWrite: canWrite)
-                    }
-                    .buttonStyle(.plain)
-                    // Not .disabled: that would dim who wrote it.
-                    .allowsHitTesting(canWrite)
                 }
             }
             .scrollTargetLayout()
@@ -78,38 +66,6 @@ private struct LetterCard: View {
         .letterCard()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Letter from \(entry.name)")
-    }
-}
-
-/// A letter you can't open yet: who wrote it, with the photo and words hidden.
-private struct LockedLetterCard: View {
-    let letter: TonightState.LockedLetter
-    let canWrite: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            LetterHeader(name: letter.name, username: letter.username, avatarPath: letter.avatarPath)
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.quaternary)
-                .frame(height: LetterCardSize.photoHeight)
-                .overlay {
-                    Image(systemName: "lock.fill")
-                        .font(.title)
-                        .foregroundStyle(.secondary)
-                }
-            Text(canWrite ? "Write tonight’s page to open it." : "You didn’t write this night.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text("A few words about the day, hidden until then.")
-                .font(.subheadline)
-                .redacted(reason: .placeholder)
-            Spacer(minLength: 0)
-        }
-        .letterCard()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(canWrite
-            ? "Locked letter from \(letter.name). Write tonight’s page to open it."
-            : "Locked letter from \(letter.name).")
     }
 }
 

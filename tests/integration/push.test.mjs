@@ -42,14 +42,19 @@ async function notifyResultAfter(action) {
   return JSON.parse(psql(`select content from net._http_response where id > ${before} order by id limit 1`));
 }
 
-test("a letter notifies its recipients", async () => {
-  const [alice, bob, carol] = [await signUp("Alice"), await signUp("Bob"), await signUp("Carol")];
+test("sending a page notifies nobody: letters arrive at 20:00 the next evening", async () => {
+  const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
   await befriend(alice, bob);
-  await befriend(alice, carol);
   await rpc(bob, "register_device", { p_token: `bob-${randomUUID()}` });
-  await rpc(carol, "register_device", { p_token: `carol-${randomUUID()}` });
 
-  assert.deepEqual(await notifyResultAfter(() => writePage(alice, { to: [bob] })), { sent: 0, skipped: 1 }, "Bob, not Carol");
+  // Let calls from earlier steps finish, then send a page and make sure nothing calls notify.
+  assert.ok(await waitFor(() => pendingCalls() === 0), "earlier notify calls should finish");
+  await new Promise((r) => setTimeout(r, 1500));
+  const before = lastResponseId();
+  await writePage(alice, { to: [bob] });
+  await new Promise((r) => setTimeout(r, 3000));
+  assert.equal(pendingCalls(), 0, "no call is queued");
+  assert.equal(lastResponseId(), before, "and none was answered");
 });
 
 test("a friend request notifies the person asked", async () => {
